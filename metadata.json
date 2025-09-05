@@ -1,0 +1,5 @@
+{
+  "name": "Duplicate Checker Sidebar",
+  "description": "An application to add new records while checking for duplicates against a master sheet, and displaying duplicate health statistics.",
+  "requestFramePermissions": []
+}
