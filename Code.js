@@ -1,5 +1,5 @@
 // --- CONFIGURATION ---
-var MASTER_SPREADSHEET_ID = '161uw5s1lOwhV7YTX8uLKDw6TMl_QLEpSqxmHEftZzVA'; // User-provided Master Sheet ID
+var MASTER_SPREADSHE-ET_ID = '161uw5s1lOwhV7YTX8uLKDw6TMl_QLEpSqxmHEftZzVA'; // User-provided Master Sheet ID
 var CHECKER_SHEET_NAME = 'Checker';
 var LOG_SHEET_NAME = 'Log';
 var HELPER_SHEET_NAME = '_QueryHelper'; // Hidden sheet for temporary formulas
