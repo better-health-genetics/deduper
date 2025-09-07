@@ -1,4 +1,3 @@
-
 /****************************************************************************************************
  * ___  ____ ___ ___ ____ ____    _  _ ____ ____ _    ___ _  _    ____ ____ _  _ ____ ___ _ ____ ____ 
  * |__] |___  |   |  |___ |__/    |__| |___ |__| |     |  |__|    | __ |___ |\ | |___  |  | |    [__  
@@ -59,4 +58,15 @@ function doGet(e) {
   return HtmlService.createHtmlOutput(getDashboardHtml_())
     .setTitle('BHG Duplication Stats Dashboard')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+/**
+ * Serves the main HTML file to the sidebar.
+ * This function is called from the Master sheet menu and exposed for the library.
+ */
+function showDuplicateCheckerSidebar() {
+  var html = HtmlService.createHtmlOutputFromFile('index')
+    .setTitle('BHG DeDuper')
+    .setSandboxMode(HtmlService.SandboxMode.IFRAME);
+  SpreadsheetApp.getUi().showSidebar(html);
 }

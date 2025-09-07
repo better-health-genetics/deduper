@@ -1,4 +1,8 @@
 
+
+
+
+
 /** ===========================================================================
  * 
  *                        SIDEBAR API FUNCTIONS
@@ -157,11 +161,11 @@ function getSourceSheetHealthData(sourceId) {
         return {
             totalChecked: totalChecked,
             totalDuplicates: totalDuplicates,
-            percentage: totalChecked > 0 ? Math.round((data.totalDuplicates / data.totalChecked) * 100) : 0
+            percentage: totalChecked > 0 ? Math.round((totalDuplicates / totalChecked) * 100) : 0
         };
     } catch (e) {
         Logger.log('Error in getSourceSheetHealthData: ' + e.stack);
-        return { percentage: 0, totalChecked: 0, totalDuplicates: 0 };
+        throw new Error('Could not get source sheet health data. ' + e.message);
     }
 }
 
@@ -248,11 +252,11 @@ function getDuplicateHealthData() {
     return {
       totalChecked: totalChecked,
       totalDuplicates: totalDuplicates,
-      percentage: totalChecked > 0 ? Math.round((data.totalDuplicates / data.totalChecked) * 100) : 0
+      percentage: totalChecked > 0 ? Math.round((totalDuplicates / totalChecked) * 100) : 0
     };
   } catch (e) {
     Logger.log('Error in getDuplicateHealthData (querying master): ' + e.stack);
-    return { error: 'Failed to calculate health data: ' + e.message };
+    throw new Error('Failed to calculate health data. ' + e.message);
   }
 }
 
@@ -411,5 +415,50 @@ function getGeminiHealthSummary(stats) {
     Logger.log('Error in getGeminiHealthSummary: ' + e.stack);
     // Rethrow a user-friendly message
     throw new Error('Could not get AI summary. ' + e.message);
+  }
+}
+
+/**
+ * A debug function callable from source sheets to verify library connection and master sheet access.
+ * This is crucial for troubleshooting "Could not connect" errors.
+ * @return {object} A result object with debug information.
+ */
+function debugConnection() {
+  try {
+    const user = Session.getActiveUser().getEmail();
+    const activeSs = SpreadsheetApp.getActiveSpreadsheet();
+    const activeSheetId = activeSs.getId();
+    const activeSheetName = activeSs.getName();
+    let masterAccessStatus = 'Unknown';
+    let masterAccessMessage = '';
+
+    try {
+      const masterSs = SpreadsheetApp.openById(MASTER_SPREADSHEET_ID);
+      const masterName = masterSs.getName();
+      masterAccessStatus = 'Success';
+      masterAccessMessage = `Successfully accessed Master Sheet: "${masterName}".`;
+    } catch (e) {
+      masterAccessStatus = 'FAILED';
+      masterAccessMessage = `Could not open the Master Sheet. The user ${user} may not have at least VIEW permissions. Error: ${e.message}`;
+    }
+    
+    return {
+      status: 'OK',
+      user: user,
+      masterAccess: masterAccessStatus,
+      activeSheetId: activeSheetId,
+      activeSheetName: activeSheetName,
+      message: 'Library function executed successfully. ' + masterAccessMessage
+    };
+
+  } catch (e) {
+    return {
+      status: 'ERROR',
+      user: Session.getActiveUser() ? Session.getActiveUser().getEmail() : 'Unknown',
+      masterAccess: 'Not Tested',
+      activeSheetId: SpreadsheetApp.getActiveSpreadsheet() ? SpreadsheetApp.getActiveSpreadsheet().getId() : 'Unknown',
+      activeSheetName: SpreadsheetApp.getActiveSpreadsheet() ? SpreadsheetApp.getActiveSpreadsheet().getName() : 'Unknown',
+      message: 'A critical error occurred within the debug function itself: ' + e.message
+    };
   }
 }

@@ -1,19 +1,8 @@
-
 /** ===========================================================================
  * 
  *                        UI & MENU FUNCTIONS
  * 
  * ===========================================================================/
-
-/**
- * Serves the main HTML file to the sidebar.
- */
-function showDuplicateCheckerSidebar() {
-  var html = HtmlService.createHtmlOutputFromFile('index')
-    .setTitle('BHG DeDuper')
-    .setSandboxMode(HtmlService.SandboxMode.IFRAME);
-  SpreadsheetApp.getUi().showSidebar(html);
-}
 
 /**
  * Opens the web dashboard in a new tab using the configured URL.

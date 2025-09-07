@@ -118,3 +118,12 @@ This is a two-part process: first setting up the central library, then configuri
     *   Save the script project.
     *   From the function dropdown, select `onOpen` and click **Run**. Authorize the script when prompted.
 6.  **Done!**: Refresh your source sheet. The simple "DeDuper" menu should now appear, and the sidebar will work correctly, powered by the central library.
+
+### 4.1. Troubleshooting
+
+If the sidebar in a Source Sheet shows a "Could not connect to the backend" error, use the built-in debugger:
+1. In the Source Sheet, go to the `DeDuper` menu.
+2. Click `Debug Connection`.
+3. An alert box will appear with diagnostic information. The most important line is **Master Sheet Access**.
+4. If it says `FAILED`, it means the current user does not have at least **view permission** for the Master Google Sheet. Grant them view access and try again.
+5. If the entire debug action fails with an error, it's likely the library was not added correctly in the Source Sheet's script project. Double-check that the library is added with the identifier `BHG_DeDuper` and that you are using the latest version of the library.
