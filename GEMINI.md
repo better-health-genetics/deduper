@@ -4,17 +4,33 @@ This document provides a technical overview of the BHG DeDuper & Data Consolidat
 
 ## 1. System Architecture
 
-The project is a **monolithic Google Apps Script application** bound to the central "Master" Google Sheet. The backend has been refactored into a modular structure for maintainability.
+The project utilizes a **library-based architecture** for scalability and maintainability.
 
-### 1.1. Key Files
+-   **Master Script (The Library)**:
+    -   This is the central Apps Script project, container-bound to the Master Google Sheet.
+    -   It contains all the core logic, backend functions (`SidebarAPI.js`, `Consolidator.js`, etc.), and the frontend UI (`index.html`).
+    -   It is deployed as a **library**, making its functions available to other scripts.
+    -   Its own `onOpen` function is responsible **only** for creating the administrative menu within the Master Sheet itself.
 
--   **`Config.js`**: **Central Hub for Settings.** Contains all global configuration variables (`SOURCE_IDS`, `MASTER_SPREADSHEET_ID`, sheet names, etc.). This is the first place to look when changing environments or adding new sources.
--   **`Code.js`**: **Main Entry Point.** Contains only the top-level `onOpen` and `doGet` triggers required by Apps Script. It delegates all functional logic to other modules.
--   **`UI.js`**: **User Interface Server.** Manages all functions that present an interface to the user, including `showDuplicateCheckerSidebar`, menu creation functions, and the `getDashboardHtml_` function that serves the full-page web app.
--   **`SidebarAPI.js`**: **Frontend-to-Backend Bridge.** Contains all server-side functions that are directly callable from the frontend UI via `google.script.run`. This file acts as the dedicated API layer for the sidebar.
--   **`Consolidator.js`**: **Core Data Engine.** Houses the primary data processing logic. This includes the `onEditSourceInstallable` trigger, the daily `consolidateSheetsIncremental` batch process, and the `findAndMarkDuplicates` algorithm.
--   **`Helpers.js`**: **Utility Library.** A collection of stateless helper functions used across the other scripts (e.g., `normalizeDateValue`, `findMasterRowByUuid`, `columnToLetter`).
--   **`index.html`**: **The Frontend Application.** A self-contained React app rendered as a Google Sheet sidebar. It communicates with `SidebarAPI.js` via the `google.script.run` bridge.
+-   **Source Sheet Scripts (The Consumers)**:
+    -   Each source spreadsheet has its own simple, container-bound "stub" script (`SourceSheetCode.js`).
+    -   The primary responsibilities of this stub script are:
+        1.  To include the Master Script as a library (identified as `BHG_DeDuper`).
+        2.  To create a simple "DeDuper" menu using its own `onOpen` trigger.
+        3.  To call the library's `showDuplicateCheckerSidebar()` function when the menu item is clicked.
+
+This model is more robust than a single monolithic script because it makes the connection between the source sheets and the main logic explicit and easier to manage.
+
+### 1.1. Key Files (In Master Script Project)
+
+-   **`Config.js`**: **Central Hub for Settings.** Contains all global configuration variables (`SOURCE_IDS`, `MASTER_SPREADSHEET_ID`, `WEB_APP_URL`, etc.).
+-   **`Code.js`**: **Main Entry Point.** Contains the `onOpen` for the admin menu and the `doGet` for the web dashboard.
+-   **`UI.js`**: **User Interface Server.** Contains `showDuplicateCheckerSidebar()` (which is exposed to the library) and the HTML generation for the dashboard.
+-   **`SidebarAPI.js`**: **Frontend-to-Backend Bridge.** Contains all server-side functions directly called by the React frontend via `google.script.run`.
+-   **`Consolidator.js`**: **Core Data Engine.** Houses the `onEditSourceInstallable` trigger, batch processing, and duplicate finding logic.
+-   **`Helpers.js`**: **Utility Library.** A collection of stateless helper functions.
+-   **`index.html`**: **The Frontend Application.** A self-contained React app.
+-   **`SourceSheetCode.js`**: **Template for Consumers.** A template file containing the code to be placed in each source sheet's script project.
 
 ---
 
@@ -22,51 +38,30 @@ The project is a **monolithic Google Apps Script application** bound to the cent
 
 ### Context-Awareness
 
-The primary architectural pattern of the UI is context-awareness. The flow is as follows:
-1.  The React app in `index.html` mounts and its first action is to call `server.run('getContext')`.
-2.  The `getContext()` function in `SidebarAPI.js` inspects the active spreadsheet's ID to determine if it's the Master, a known Source, or Other. For 'Other' sheets, it also checks for the presence of required headers.
-3.  It returns a context object (e.g., `{ context: 'MASTER' }` or `{ context: 'SOURCE', sourceId: '...', sourceName: '...' }`).
-4.  The React app uses this context object to route to the correct view (AdminDashboard, SourceSheetView, or DefaultView).
+Context is still determined when the sidebar loads, but the menu creation is now decentralized.
+1.  A user in a Source Sheet clicks the menu item created by the local `SourceSheetCode.js` script.
+2.  This calls the library function `BHG_DeDuper.showDuplicateCheckerSidebar()`.
+3.  The sidebar UI (`index.html`) loads. Its first action is to call `server.run('getContext')`.
+4.  The `getContext()` function (in the library's `SidebarAPI.js`) inspects the active spreadsheet's ID to determine if it's the Master, a known Source, or Other.
+5.  It returns a context object (e.g., `{ context: 'SOURCE', sourceId: '...' }`).
+6.  The React app uses this context object to render the correct view (AdminDashboard, SourceSheetView, etc.).
 
 ### Data Entry Workflows
 
-There are two distinct workflows for adding records, which is critical to understand.
+The actual data processing workflows remain the same as described previously, as all the logic still resides in the central library. The only change is how the user interface is initiated.
 
-#### A) Source Sheet Workflow
-This is the standard flow for data entry clerks working in a designated source sheet.
-1.  **UI Action**: User submits the form in the `SourceSheetView`.
-2.  **API Call**: `server.run('addRecordToSourceSheet', formData)` is called.
-3.  **Backend (`SidebarAPI.js`)**: The `addRecordToSourceSheet` function is simple. It finds the required columns (`FIRST NAME`, `LAST NAME`, `DOB`) and appends a new row **to the active source sheet**.
-4.  **Trigger (`Consolidator.js`)**: This action of adding a row fires the `onEditSourceInstallable` trigger for that source sheet.
-5.  **Core Logic**: The `onEdit` trigger handles the heavy lifting: it assigns a `MASTER_UUID`, syncs the new record to the `Master` sheet, checks for duplicates, and writes feedback (like potential duplicate links) back to the source sheet row.
-
-#### B) Generic Sheet Workflow
-This flow is for ad-hoc entries from any non-standard sheet.
-1.  **UI Action**: User submits the form in the `DefaultView`.
-2.  **API Call**: `server.run('addRecordAndCheckDuplicates', formData)` is called.
-3.  **Backend (`SidebarAPI.js`)**: The `addRecordAndCheckDuplicates` function performs a more complex, direct operation:
-    - It finds or creates a `Checker` sheet **locally** (in the user's current spreadsheet) and **centrally** (in the Master spreadsheet).
-    - It queries the `Master` sheet to see if a record with the same details already exists.
-    - **If a duplicate exists**, it updates the timestamp of the existing record in the `Master` sheet.
-    - **If it's a new record**, it appends a new row to the `Master` sheet.
-    - It **always** adds a log entry to both the local and central `Checker` sheets, providing a complete audit trail.
-4.  **Response**: It returns a detailed status message to the UI.
-
-### Performance Optimization
-
--   **Fast Lookups**: The script avoids slow `.getValues()` loops for single-record lookups. Instead, `findMasterRecordByDetails_` in `Helpers.js` uses a temporary sheet with a `=QUERY()` formula, delegating the search to Google's highly optimized backend.
--   **Debouncing**: The `onEdit` trigger uses a script cache (`shouldDebounceRow_`) to prevent the same row from being processed multiple times in rapid succession (e.g., from a fast paste).
+-   **Source Sheet Workflow**: The `onEditSourceInstallable` trigger is still created and managed by the Master Script admin, but the sidebar that initiates new entries is now opened via the local script.
+-   **Generic Sheet Workflow**: If a user adds the library to a generic sheet, the `getContext` call will identify it as 'OTHER' or 'OTHER_NO_HEADERS', and the sidebar will function in "Checker Mode" as designed.
 
 ---
 
 ## 3. How to Modify
 
--   **Change Configuration**: Edit the variables in **`Config.js`**. This is where you'll add new source sheet IDs or change target sheet names.
--   **UI Changes**: All modifications to the sidebar's appearance or behavior should be made to the React components within the `<script type="text/babel">` tag in **`index.html`**.
+-   **Change Configuration**: Edit the variables in **`Config.js`** in the Master Script project.
+-   **UI Changes**: All modifications to the sidebar's appearance or behavior should be made in **`index.html`** in the Master Script project.
 -   **Add a New API Endpoint**:
-    1.  Define the new function in **`SidebarAPI.js`**. This keeps the API layer clean.
-    2.  In `index.html`, call it from the frontend using `await server.run('myNewFunction', args)`.
-    3.  Add a mock implementation for the new function to the mock server in `index.html` to enable local development.
--   **Modify Core `onEdit` Behavior**: Changes to how data is synced from source sheets to the Master should be made in `onEditSourceInstallable` within **`Consolidator.js`**.
--   **Alter Batch Processing**: To change the nightly consolidation, modify `consolidateSheetsIncremental` in **`Consolidator.js`**.
--   **Add a Helper Function**: If you have a new, reusable utility (e.g., a new data cleaning function), add it to **`Helpers.js`**.
+    1.  Define the new function in **`SidebarAPI.js`** in the Master Script project.
+    2.  Call it from `index.html` using `await server.run('myNewFunction', args)`.
+-   **Modify `onEdit` Behavior**: Changes to how data is synced from source sheets to the Master should be made in `onEditSourceInstallable` within **`Consolidator.js`** in the Master Script project.
+-   **Expose a New Library Function**: If you need to call a new top-level function from the source sheet stubs, ensure it is defined globally (e.g., in `UI.js` or `Code.js`) in the Master Script project.
+-   **Deploying Changes**: After making changes to the Master Script, you must create a **new version** of the library deployment (`Deploy > Manage deployments > Select Library deployment > Edit > New version`). Source sheets will then automatically use the updated version.

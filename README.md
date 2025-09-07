@@ -20,8 +20,8 @@ The system is composed of a powerful, modular Google Apps Script backend and a m
 - **Comprehensive Logging**: Maintains detailed logs for all operations, errors, and identified duplicates.
 - **Admin Controls**: Provides menu items for administrative tasks like full data rebuilds, historical imports, and trigger setup.
 
-### Context-Aware Sidebar & Menu
-The sidebar's UI and the main menu in Google Sheets intelligently adapt to the user's current location.
+### Context-Aware Sidebar
+The sidebar's UI intelligently adapts to the user's current location.
 
 -   **Admin Dashboard View (in Master Sheet)**:
     -   When opened in the Master Sheet, it displays a comprehensive dashboard of duplication statistics for all source sheets.
@@ -39,9 +39,6 @@ The sidebar's UI and the main menu in Google Sheets intelligently adapt to the u
     -   Displays **overall** duplicate health statistics from the entire Master sheet.
     -   Submitting a record logs the entry to a local `Checker` sheet and a central `Checker` sheet in the Master file, then writes the data directly to the Master sheet.
 
--   **Context-Aware Menu**:
-    -   **In the Master Sheet**: You will see the full **"Data Consolidator"** menu with all administrative functions.
-    -   **In any other Sheet**: A simplified **"DeDuper"** menu appears with a single item to "Show Sidebar", ensuring a clean, focused interface for non-admin users.
 
 ### Standalone Web Dashboard
 - A full-page, data-rich dashboard accessible via a shareable URL.
@@ -52,61 +49,72 @@ The sidebar's UI and the main menu in Google Sheets intelligently adapt to the u
 
 ## 3. System Architecture
 
-The entire system is powered by a Google Apps Script project attached to the **Master Google Sheet**. The backend has been refactored into a modular, maintainable structure.
+The system uses a **library-based architecture** for scalability and manageability.
 
--   **Backend (Multiple `.js` files)**:
-    -   **`Config.js`**: Centralized configuration for all spreadsheet IDs and settings.
-    -   **`Code.js`**: Main entry point containing `onOpen` and `doGet` triggers.
-    -   **`UI.js`**: Manages all UI-related actions like showing the sidebar and serving the web app.
-    -   **`SidebarAPI.js`**: The API layer containing all functions called by the frontend.
-    -   **`Consolidator.js`**: The core data processing engine, including the `onEdit` trigger and batch consolidation logic.
-    -   **`Helpers.js`**: A collection of utility functions used across the backend.
+-   **Master Script (The Library)**:
+    -   A central Google Apps Script project bound to the Master Sheet. It contains all the core logic, the UI (`index.html`), and all the backend processing functions.
+    -   This project is deployed as a **library**, allowing other scripts to call its functions.
 
--   **Frontend (`index.html`)**:
-    -   A complete, self-contained React application that runs in the Google Sheets sidebar.
-    -   Communicates with the backend API functions via `google.script.run`.
-    -   Includes a mock server for easy local development and testing of the UI.
+-   **Source Sheet Scripts (The Consumers)**:
+    -   Each source spreadsheet has its own, very small, container-bound script.
+    -   This "stub" script's only job is to **include the Master library** and use it to create a menu and show the sidebar. This makes the connection explicit and easy to manage.
 
 ---
 
 ## 4. Setup and Deployment
+
+This is a two-part process: first setting up the central library, then configuring each source sheet to use it.
+
+### Part A: Setting up the Master Library
 
 1.  **Prepare the Master Sheet**:
     *   Create a new Google Sheet. This will be your Master Sheet.
     *   Note its Spreadsheet ID from the URL (`.../spreadsheets/d/SPREADSHEET_ID/edit`).
 
 2.  **Install the Script**:
-    *   Open the Script Editor by going to `Extensions` > `Apps Script`.
+    *   Open the Script Editor in the Master sheet (`Extensions` > `Apps Script`).
     *   Delete any existing files.
-    *   Create a new script file for **each** of the backend files (`Code.js`, `Config.js`, `UI.js`, etc.), making sure the filenames match exactly. Copy and paste the contents into the corresponding files.
-    *   Create an HTML file named `index.html` (`File` > `New` > `HTML file`) and paste its contents.
+    *   Create a script file for **each** backend file (`Code.js`, `Config.js`, etc.) and an HTML file for `index.html`. Copy and paste the contents into the corresponding files.
 
 3.  **Configure the Script (`Config.js`)**:
-    *   Open the `Config.js` file in the script editor.
-    *   Set `MASTER_SPREADSHEET_ID` to the ID of the sheet you just created.
-    *   Update the `SOURCE_IDS` array with the spreadsheet IDs of all the source sheets you want to pull data from.
+    *   Open the `Config.js` file.
+    *   Set `MASTER_SPREADSHEET_ID` to the ID of your Master sheet.
+    *   Update `SOURCE_IDS` with the spreadsheet IDs of all your source sheets.
 
 4.  **Deploy the Web App & Configure URL**:
     *   In the Script Editor, click **Deploy > New deployment**.
-    *   Click the **gear icon** and select **Web app**.
-    *   Configure the deployment:
-        *   **Execute as**: `User accessing the web app`
-        *   **Who has access**: `Anyone with Google account` (or your organization)
+    *   Click the **gear icon** and select **Web app**. Configure it as `Execute as: User accessing the web app` and `Who has access: Anyone with Google account`.
+    *   Click **Deploy**. Copy the **Web app URL**.
+    *   **CRITICAL**: Paste this URL into the `WEB_APP_URL` variable in `Config.js`.
+
+5.  **Deploy as a Library**:
+    *   Click **Deploy > New deployment** again.
+    *   Click the **gear icon** and select **Library**.
+    *   Enter a description (e.g., "BHG DeDuper Core").
     *   Click **Deploy**.
-    *   Copy the **Web app URL** provided.
-    *   **CRITICAL**: Go back to the `Config.js` file in the editor and paste this URL into the `WEB_APP_URL` variable.
+    *   Copy the **Script ID** provided. You will need this for Part B.
 
-5.  **First-Time Run & Authorization**:
-    *   Save the project.
-    *   From the Script Editor, select the `onOpen` function from the dropdown and click **Run**.
-    *   This will prompt you to grant the necessary permissions. Follow the on-screen instructions to authorize it.
+6.  **Authorize and Initialize**:
+    *   In the Script Editor, select the `onOpen` function and click **Run**. Authorize the script when prompted.
+    *   Refresh your Master Sheet. The **"Data Consolidator"** menu should appear.
+    *   Go to `Data Consolidator` > `🔑 Set Gemini API Key` and enter your key.
+    *   Run the initial setup commands: `⚙️ Create Source onEdit Triggers` and `⏰ Create Daily Consolidation (2am)`.
 
-6.  **Initialize the System**:
-    *   Go back to your Master Google Sheet and refresh the page. A new menu named **"Data Consolidator"** should appear, and the sidebar should open automatically.
-    *   **CRITICAL: Set API Key**: Go to `Data Consolidator` > `🔑 Set Gemini API Key`. Paste your Google AI Gemini API key into the prompt. This is required for the "AI Health Summary" feature.
-    *   Use the menu to run the initial setup functions:
-        *   `Data Consolidator` > `⚙️ Create Source onEdit Triggers`
-        *   `Data Consolidator` > `⏰ Create Daily Consolidation (2am)`
-        *   (Optional) `Data Consolidator` > `🔄 Rebuild Master (Full Reset)` to perform an initial full import of all data.
+### Part B: Setting up a Source Sheet
 
-The system is now fully configured and operational.
+**Repeat these steps for EACH of your source sheets.**
+
+1.  **Open the Source Sheet** and go to its Script Editor (`Extensions > Apps Script`).
+2.  You should see a file named `Code.gs`. Delete any code inside it.
+3.  Copy the entire contents of the `SourceSheetCode.js` file and paste it into `Code.gs`.
+4.  **Add the Library**:
+    *   In the left-hand menu, click the **`+` icon** next to "Libraries".
+    *   Paste the **Script ID** you copied from Part A, Step 5.
+    *   Click **Look up**.
+    *   Ensure the latest version is selected.
+    *   **IMPORTANT**: Change the "Identifier" to `BHG_DeDuper` (this must match the code).
+    *   Click **Add**.
+5.  **Save and Authorize**:
+    *   Save the script project.
+    *   From the function dropdown, select `onOpen` and click **Run**. Authorize the script when prompted.
+6.  **Done!**: Refresh your source sheet. The simple "DeDuper" menu should now appear, and the sidebar will work correctly, powered by the central library.
