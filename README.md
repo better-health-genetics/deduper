@@ -1,4 +1,3 @@
-
 # BHG DeDuper & Data Consolidator
 
 ## 1. Overview
@@ -87,12 +86,22 @@ The entire system is powered by a Google Apps Script project attached to the **M
     *   Set `MASTER_SPREADSHEET_ID` to the ID of the sheet you just created.
     *   Update the `SOURCE_IDS` array with the spreadsheet IDs of all the source sheets you want to pull data from.
 
-4.  **First-Time Run & Authorization**:
+4.  **Deploy the Web App & Configure URL**:
+    *   In the Script Editor, click **Deploy > New deployment**.
+    *   Click the **gear icon** and select **Web app**.
+    *   Configure the deployment:
+        *   **Execute as**: `User accessing the web app`
+        *   **Who has access**: `Anyone with Google account` (or your organization)
+    *   Click **Deploy**.
+    *   Copy the **Web app URL** provided.
+    *   **CRITICAL**: Go back to the `Config.js` file in the editor and paste this URL into the `WEB_APP_URL` variable.
+
+5.  **First-Time Run & Authorization**:
     *   Save the project.
     *   From the Script Editor, select the `onOpen` function from the dropdown and click **Run**.
     *   This will prompt you to grant the necessary permissions. Follow the on-screen instructions to authorize it.
 
-5.  **Initialize the System**:
+6.  **Initialize the System**:
     *   Go back to your Master Google Sheet and refresh the page. A new menu named **"Data Consolidator"** should appear, and the sidebar should open automatically.
     *   **CRITICAL: Set API Key**: Go to `Data Consolidator` > `🔑 Set Gemini API Key`. Paste your Google AI Gemini API key into the prompt. This is required for the "AI Health Summary" feature.
     *   Use the menu to run the initial setup functions:

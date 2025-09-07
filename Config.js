@@ -29,6 +29,10 @@ var SOURCE_IDS = [
 var LIVE_SPREADSHEET_ID = '161uw5s1lOwhV7YTX8uLKDw6TMl_QLEpSqxmHEftZzVA'; // Production Master Sheet
 var MASTER_SPREADSHEET_ID = '14I2UGjK3Vmsbya9PJZY16SxIDKotply3ysLHkWI-Hpw'; // Development Master Sheet
 
+// --- !! IMPORTANT !! ---
+// After deploying the script as a Web App, paste the correct URL here.
+var WEB_APP_URL = 'PASTE_YOUR_WEB_APP_URL_HERE'; 
+
 // Sheet Names
 var DEST_SHEET_NAME = 'Master';
 var LOG_SHEET_NAME = 'Log';

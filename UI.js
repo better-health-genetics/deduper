@@ -16,11 +16,14 @@ function showDuplicateCheckerSidebar() {
 }
 
 /**
- * Opens the web dashboard in a new tab.
+ * Opens the web dashboard in a new tab using the configured URL.
  */
 function ui_openDashboard_() {
-  var url = ScriptApp.getService().getUrl();
-  var html = HtmlService.createHtmlOutput('<script>window.open("' + url + '", "_blank");</script>')
+  if (!WEB_APP_URL || WEB_APP_URL === 'PASTE_YOUR_WEB_APP_URL_HERE') {
+    SpreadsheetApp.getUi().alert('Dashboard URL Not Configured', 'Please ask your administrator to set the WEB_APP_URL in the Config.js script file.', SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+  var html = HtmlService.createHtmlOutput('<script>window.open("' + WEB_APP_URL + '", "_blank");</script>')
     .setWidth(100)
     .setHeight(100);
   SpreadsheetApp.getUi().showModalDialog(html, 'Opening Dashboard...');
@@ -52,7 +55,7 @@ function ui_setApiKey_() {
 
 /**
  * Returns the HTML content for the dashboard web app.
- * This version includes summary cards, a chart, and a detailed table.
+ * This version is now fully interactive with date pickers and an AI summary feature.
  * @return {string} The complete HTML for the dashboard.
  */
 function getDashboardHtml_() {
@@ -68,13 +71,50 @@ function getDashboardHtml_() {
         body { background-color: #111827; color: #f3f4f6; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif; }
         .stat-card { background-color: #1f2937; border-color: #374151; }
         .table-header { position: sticky; top: 0; background-color: #374151; }
+        .spinner { border: 2px solid #f3f4f5; border-top: 2px solid #3b82f6; border-radius: 50%; width: 1rem; height: 1rem; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
       </style>
     </head>
     <body>
       <div class="container mx-auto p-4 md:p-8">
-        <h1 class="text-3xl md:text-4xl font-bold text-cyan-400 mb-2">BHG DeDuper Dashboard</h1>
-        <p id="subtitle" class="text-md text-gray-400 mb-8">Loading data for the current week...</p>
+        <div class="flex flex-wrap justify-between items-center mb-2">
+          <h1 class="text-3xl md:text-4xl font-bold text-cyan-400">BHG DeDuper Dashboard</h1>
+        </div>
+        <p id="subtitle" class="text-md text-gray-400 mb-6">Loading data for the current week...</p>
         
+        <!-- Controls -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <div class="md:col-span-2 lg:col-span-2 bg-gray-800 border border-gray-700 p-3 rounded-lg flex flex-col space-y-2">
+                <div class="grid grid-cols-2 gap-2">
+                    <input type="date" id="start-date" class="w-full text-sm bg-gray-700 border border-gray-600 rounded py-1 px-2 text-gray-200 focus:outline-none focus:ring-1 focus:ring-cyan-500">
+                    <input type="date" id="end-date" class="w-full text-sm bg-gray-700 border border-gray-600 rounded py-1 px-2 text-gray-200 focus:outline-none focus:ring-1 focus:ring-cyan-500">
+                </div>
+                <div id="filter-buttons" class="flex justify-center items-center gap-2 pt-1">
+                    <button data-filter="WTD" class="filter-btn px-3 py-1 text-xs rounded-full transition-colors">WTD</button>
+                    <button data-filter="MTD" class="filter-btn px-3 py-1 text-xs rounded-full transition-colors">MTD</button>
+                    <button data-filter="YTD" class="filter-btn px-3 py-1 text-xs rounded-full transition-colors">YTD</button>
+                    <button data-filter="ALL" class="filter-btn px-3 py-1 text-xs rounded-full transition-colors">ALL</button>
+                </div>
+            </div>
+            <div class="md:col-span-2 lg:col-span-2 bg-gray-800 border border-gray-700 rounded-lg p-3 space-y-2">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-md font-semibold text-gray-200 flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12.5 5.515c1.334-2.134 4.133-2.68 6.267-.985c2.134 1.694 2.68 4.827.985 6.961l-7.252 8.016l-7.252-8.016c-1.695-2.134-.94-5.267 1.194-6.961c2.134-1.695 4.933-.94 6.267.985Z"/></svg>
+                        AI Health Summary
+                    </h3>
+                    <button id="gemini-button" class="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-white bg-gradient-to-r from-cyan-600 to-blue-600 rounded-md hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed">
+                        <span id="gemini-button-text">Generate Analysis</span>
+                        <div id="gemini-spinner" class="spinner" style="display: none;"></div>
+                    </button>
+                </div>
+                <div id="gemini-error" class="bg-red-900/50 text-red-300 text-sm font-medium text-center p-1.5 rounded-md w-full" style="display: none;"></div>
+                <div id="gemini-summary-container" class="bg-gray-900/50 p-2.5 rounded-md border-l-4 border-cyan-500" style="display: none;">
+                    <p id="gemini-summary" class="text-sm text-gray-300 italic"></p>
+                </div>
+            </div>
+        </div>
+
+
         <div id="loading" class="text-center py-16">
           <p class="text-2xl animate-pulse">Loading Dashboard Data...</p>
         </div>
@@ -116,56 +156,119 @@ function getDashboardHtml_() {
                       <th scope="col" class="table-header px-4 py-3 text-right">Total Records</th>
                     </tr>
                   </thead>
-                  <tbody id="stats-table-body">
-                    <!-- Rows will be injected here by script -->
-                  </tbody>
+                  <tbody id="stats-table-body"></tbody>
                 </table>
               </div>
             </div>
           </div>
         </div>
         
-        <div id="error" class="text-center py-16 text-red-400 text-2xl" style="display: none;"></div>
+        <div id="error-container" class="text-center py-16 text-red-400 text-2xl" style="display: none;"></div>
       </div>
 
       <script>
-        document.addEventListener('DOMContentLoaded', function() {
-          const today = new Date();
-          const day = today.getDay();
-          const diff = today.getDate() - day + (day === 0 ? -6 : 1); // Adjust for Sunday
-          const monday = new Date(new Date().setDate(diff));
-          const startDate = monday.toISOString().split('T')[0];
-          const endDate = new Date().toISOString().split('T')[0];
+        let chartInstance = null;
+        let currentStats = [];
+        let activeFilter = 'WTD';
 
-          google.script.run
-            .withSuccessHandler(onDataLoaded)
-            .withFailureHandler(onDataError)
-            .getAdminDashboardData(startDate, endDate);
-        });
+        const loadingDiv = document.getElementById('loading');
+        const contentDiv = document.getElementById('dashboard-content');
+        const errorDiv = document.getElementById('error-container');
+        const subtitle = document.getElementById('subtitle');
+        const startDateInput = document.getElementById('start-date');
+        const endDateInput = document.getElementById('end-date');
+        const filterButtons = document.querySelectorAll('.filter-btn');
+        
+        const geminiButton = document.getElementById('gemini-button');
+        const geminiButtonText = document.getElementById('gemini-button-text');
+        const geminiSpinner = document.getElementById('gemini-spinner');
+        const geminiError = document.getElementById('gemini-error');
+        const geminiSummaryContainer = document.getElementById('gemini-summary-container');
+        const geminiSummary = document.getElementById('gemini-summary');
+        
+        const getMonday = (d) => {
+            d = new Date(d);
+            const day = d.getDay(), diff = d.getDate() - day + (day === 0 ? -6 : 1);
+            return new Date(d.setDate(diff));
+        };
+        const dateToInputValue = (date) => date ? date.toISOString().split('T')[0] : '';
+        
+        function updateFilterButtons() {
+          filterButtons.forEach(btn => {
+            if (btn.dataset.filter === activeFilter) {
+              btn.classList.add('bg-cyan-600', 'text-white', 'font-semibold');
+              btn.classList.remove('bg-gray-600', 'text-gray-300', 'hover:bg-gray-500');
+            } else {
+              btn.classList.remove('bg-cyan-600', 'text-white', 'font-semibold');
+              btn.classList.add('bg-gray-600', 'text-gray-300', 'hover:bg-gray-500');
+            }
+          });
+        }
+        
+        function setDateRange(filter) {
+            const today = new Date();
+            let newStart = new Date(today);
+            let newEnd = new Date(today);
+
+            if (filter === 'WTD') newStart = getMonday(today);
+            else if (filter === 'MTD') newStart = new Date(today.getFullYear(), today.getMonth(), 1);
+            else if (filter === 'YTD') newStart = new Date(today.getFullYear(), 0, 1);
+            else if (filter === 'ALL') { newStart = null; newEnd = null; }
+            
+            activeFilter = filter;
+            updateFilterButtons();
+            
+            startDateInput.value = dateToInputValue(newStart);
+            endDateInput.value = dateToInputValue(newEnd);
+            
+            fetchData(newStart, newEnd);
+        };
+        
+        function fetchData(start, end) {
+            loadingDiv.style.display = 'block';
+            contentDiv.style.display = 'none';
+            errorDiv.style.display = 'none';
+            geminiButton.disabled = true;
+
+            const startDateStr = start ? dateToInputValue(start) : null;
+            const endDateStr = end ? dateToInputValue(end) : null;
+            
+            google.script.run
+                .withSuccessHandler((data) => onDataLoaded(data, start, end))
+                .withFailureHandler(onDataError)
+                .getAdminDashboardData(startDateStr, endDateStr);
+        }
 
         function onDataError(error) {
-          document.getElementById('loading').style.display = 'none';
-          var errorDiv = document.getElementById('error');
+          loadingDiv.style.display = 'none';
           errorDiv.style.display = 'block';
           errorDiv.textContent = 'Error loading data: ' + error.message;
         }
 
-        function onDataLoaded(data) {
-          document.getElementById('loading').style.display = 'none';
+        function onDataLoaded(data, start, end) {
+          loadingDiv.style.display = 'none';
+          geminiButton.disabled = false;
+          
+          currentStats = data || []; // Store stats for AI summary
+
+          // Update subtitle
+          if (activeFilter === 'ALL') {
+            subtitle.textContent = 'Displaying stats for all records.';
+          } else if (start && end) {
+            const options = { year: 'numeric', month: 'short', day: 'numeric' };
+            subtitle.textContent = 'Displaying stats from ' + start.toLocaleDateString(undefined, options) + ' to ' + end.toLocaleDateString(undefined, options) + '.';
+          }
           
           if (!data || data.length === 0) {
-              var errorDiv = document.getElementById('error');
               errorDiv.style.display = 'block';
               errorDiv.textContent = 'No data available to display for this period.';
               return;
           }
 
-          document.getElementById('dashboard-content').style.display = 'block';
-
-          // Sort data by percentage, descending for chart and table
+          contentDiv.style.display = 'block';
           data.sort((a, b) => b.percentage - a.percentage);
 
-          // --- 1. Calculate and Populate Overall Stats Cards ---
+          // Populate Cards
           const totalRecords = data.reduce((sum, item) => sum + item.totalChecked, 0);
           const totalDuplicates = data.reduce((sum, item) => sum + item.totalDuplicates, 0);
           const overallRate = totalRecords > 0 ? Math.round((totalDuplicates / totalRecords) * 100) : 0;
@@ -173,14 +276,12 @@ function getDashboardHtml_() {
           document.getElementById('overall-rate').textContent = overallRate + '%';
           document.getElementById('total-duplicates').textContent = totalDuplicates.toLocaleString();
           document.getElementById('total-records').textContent = totalRecords.toLocaleString();
-          document.getElementById('subtitle').textContent = 'Displaying stats for the current week (' + new Date().toLocaleDateString() + ').';
 
-          // --- 2. Populate Detailed Table ---
+          // Populate Table
           const tableBody = document.getElementById('stats-table-body');
-          let tableHtml = '';
-          data.forEach(item => {
+          tableBody.innerHTML = data.map(item => {
             const healthColor = item.percentage <= 15 ? 'text-green-400' : (item.percentage < 30 ? 'text-yellow-400' : 'text-red-400');
-            tableHtml += \`
+            return \`
               <tr class="border-b border-gray-700 hover:bg-gray-700/50">
                 <td class="px-4 py-2 font-medium whitespace-nowrap">\${item.sourceName}</td>
                 <td class="px-4 py-2 text-right font-bold \${healthColor}">\${item.percentage}%</td>
@@ -188,63 +289,75 @@ function getDashboardHtml_() {
                 <td class="px-4 py-2 text-right">\${item.totalChecked.toLocaleString()}</td>
               </tr>
             \`;
-          });
-          tableBody.innerHTML = tableHtml;
+          }).join('');
 
-          // --- 3. Render Chart ---
-          const chartLabels = data.map(item => item.sourceName).slice(0, 15); // Show top 15 in chart
-          const chartPercentages = data.map(item => item.percentage).slice(0, 15);
-          
-          const getHealthColor = (percentage, opacity = '0.7') => {
-              if (percentage <= 15) return \`rgba(74, 222, 128, \${opacity})\`; // green-400
-              if (percentage < 30) return \`rgba(250, 204, 21, \${opacity})\`; // yellow-400
-              return \`rgba(248, 113, 113, \${opacity})\`; // red-400
-          };
+          // Render Chart
+          const top15 = data.slice(0, 15);
+          const chartLabels = top15.map(item => item.sourceName);
+          const chartPercentages = top15.map(item => item.percentage);
+          const getHealthColor = (p, op = '0.7') => p <= 15 ? \`rgba(74, 222, 128, \${op})\` : (p < 30 ? \`rgba(250, 204, 21, \${op})\` : \`rgba(248, 113, 113, \${op})\`);
 
-          const backgroundColors = chartPercentages.map(p => getHealthColor(p));
-          
-          const ctx = document.getElementById('statsChart').getContext('2d');
-          new Chart(ctx, {
-            type: 'bar',
-            data: {
+          const chartData = {
               labels: chartLabels,
               datasets: [{
                 label: 'Duplicate %',
                 data: chartPercentages,
-                backgroundColor: backgroundColors,
-                borderColor: backgroundColors.map(c => c.replace('0.7', '1')),
+                backgroundColor: chartPercentages.map(p => getHealthColor(p)),
+                borderColor: chartPercentages.map(p => getHealthColor(p, '1')),
                 borderWidth: 1
               }]
-            },
-            options: {
-              indexAxis: 'y', // Horizontal bar chart
-              responsive: true,
-              maintainAspectRatio: false,
-              scales: {
-                x: { beginAtZero: true, max: 100, ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255, 255, 255, 0.1)' } },
-                y: { ticks: { color: '#d1d5db' }, grid: { display: false } }
-              },
-              plugins: {
-                legend: { display: false },
-                tooltip: {
-                  callbacks: {
-                      label: function(context) {
-                          let label = context.dataset.label || '';
-                          if (label) { label += ': '; }
-                          if (context.parsed.x !== null) { label += context.parsed.x + '%'; }
-                          // Find original full data item for tooltip
-                          const sourceData = data.find(d => d.sourceName === context.label);
-                          if (sourceData) {
-                             label += ' (' + sourceData.totalDuplicates + ' / ' + sourceData.totalChecked + ' records)';
-                          }
-                          return label;
-                      }
-                  }
-                }
-              }
-            }
-          });
+            };
+
+          if (chartInstance) {
+              chartInstance.data = chartData;
+              chartInstance.update();
+          } else {
+              const ctx = document.getElementById('statsChart').getContext('2d');
+              chartInstance = new Chart(ctx, { type: 'bar', data: chartData, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, scales: { x: { beginAtZero: true, max: 100, ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255, 255, 255, 0.1)' } }, y: { ticks: { color: '#d1d5db' }, grid: { display: false } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => \`\${c.dataset.label || ''}: \${c.parsed.x}%\` } } } } });
+          }
         }
+        
+        function handleGenerateSummary() {
+            if (currentStats.length === 0) {
+                geminiError.textContent = 'There is no data to analyze for the selected period.';
+                geminiError.style.display = 'block';
+                return;
+            }
+            geminiButton.disabled = true;
+            geminiButtonText.style.display = 'none';
+            geminiSpinner.style.display = 'block';
+            geminiError.style.display = 'none';
+            geminiSummaryContainer.style.display = 'none';
+
+            google.script.run
+                .withSuccessHandler(onSummarySuccess)
+                .withFailureHandler(onSummaryError)
+                .getGeminiHealthSummary(currentStats);
+        }
+
+        function onSummarySuccess(summary) {
+            geminiButton.disabled = false;
+            geminiButtonText.style.display = 'block';
+            geminiSpinner.style.display = 'none';
+            geminiSummary.textContent = summary;
+            geminiSummaryContainer.style.display = 'block';
+        }
+
+        function onSummaryError(error) {
+            geminiButton.disabled = false;
+            geminiButtonText.style.display = 'block';
+            geminiSpinner.style.display = 'none';
+            geminiError.textContent = error.message || 'Failed to generate summary.';
+            geminiError.style.display = 'block';
+        }
+
+        // --- Event Listeners ---
+        document.addEventListener('DOMContentLoaded', () => setDateRange('WTD'));
+        filterButtons.forEach(btn => btn.addEventListener('click', () => setDateRange(btn.dataset.filter)));
+        startDateInput.addEventListener('change', () => { activeFilter = ''; updateFilterButtons(); fetchData(new Date(startDateInput.value+'T00:00:00'), new Date(endDateInput.value+'T00:00:00')); });
+        endDateInput.addEventListener('change', () => { activeFilter = ''; updateFilterButtons(); fetchData(new Date(startDateInput.value+'T00:00:00'), new Date(endDateInput.value+'T00:00:00')); });
+        geminiButton.addEventListener('click', handleGenerateSummary);
+
       </script>
     </body>
   </html>
