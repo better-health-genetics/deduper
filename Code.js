@@ -72,6 +72,7 @@ function onOpen() {
       .addItem('📥 Reimport History (Keep Master)', 'ui_reimportHistoryNoClear_')
       .addSeparator()
       .addItem('Show DeDuper Sidebar', 'showDuplicateCheckerSidebar') // Added sidebar opener
+      .addItem('Open Stats Dashboard', 'ui_openDashboard_')
       .addSeparator()
       .addItem('🧭 Seed Source Last Rows', 'ui_initSourceLastRows_')
       .addItem('🧭 Seed Consolidation Cursors', 'ui_initConsolidateLastRows_')
@@ -99,6 +100,180 @@ function showDuplicateCheckerSidebar() {
   SpreadsheetApp.getUi().showSidebar(html);
 }
 
+/**
+ * Opens the web dashboard in a new tab.
+ */
+function ui_openDashboard_() {
+  var url = ScriptApp.getService().getUrl();
+  var html = HtmlService.createHtmlOutput('<script>window.open("' + url + '", "_blank");</script>')
+    .setWidth(100)
+    .setHeight(100);
+  SpreadsheetApp.getUi().showModalDialog(html, 'Opening Dashboard...');
+}
+
+
+/** ===========================================================================
+ * 
+ *                        WEB APP DASHBOARD
+ * 
+ * ===========================================================================/
+
+/**
+ * Serves the web app dashboard. Checks user permission by verifying they can open the Master sheet.
+ */
+function doGet(e) {
+  try {
+    // This line acts as a permission check. If the user cannot access the sheet, it will throw an error.
+    SpreadsheetApp.openById(MASTER_SPREADSHEET_ID); 
+  } catch (err) {
+    return HtmlService.createHtmlOutput('<h1>Access Denied</h1><p>You do not have permission to view this page. Please request view access to the Master Spreadsheet.</p>');
+  }
+
+  return HtmlService.createHtmlOutput(getDashboardHtml_())
+    .setTitle('BHG Duplication Stats Dashboard')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+/**
+ * Returns the HTML content for the dashboard web app.
+ * @return {string} The complete HTML for the dashboard.
+ */
+function getDashboardHtml_() {
+  return `
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <base target="_top">
+      <title>BHG Duplication Stats Dashboard</title>
+      <script src="https://cdn.tailwindcss.com"></script>
+      <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+      <style>
+        body { background-color: #111827; color: #f3f4f6; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif; }
+        #chart-container { height: 400px; }
+      </style>
+    </head>
+    <body>
+      <div class="container mx-auto p-4 md:p-8">
+        <h1 class="text-3xl md:text-4xl font-bold text-cyan-400 mb-2">BHG DeDuper Dashboard</h1>
+        <p class="text-md md:text-lg text-gray-400 mb-8">Weekly duplicate percentages for each source sheet.</p>
+        
+        <div id="loading" class="text-center py-16">
+          <p class="text-2xl animate-pulse">Loading Dashboard Data...</p>
+        </div>
+        
+        <div id="chart-container" class="bg-gray-800 p-2 md:p-6 rounded-lg shadow-xl" style="display: none; position: relative;">
+          <canvas id="statsChart"></canvas>
+        </div>
+        
+        <div id="error" class="text-center py-16 text-red-400 text-2xl" style="display: none;">
+        </div>
+      </div>
+
+      <script>
+        document.addEventListener('DOMContentLoaded', function() {
+          const today = new Date();
+          const day = today.getDay();
+          const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+          const monday = new Date(today.setDate(diff));
+          const startDate = monday.toISOString().split('T')[0];
+          const endDate = new Date().toISOString().split('T')[0];
+
+          google.script.run
+            .withSuccessHandler(onDataLoaded)
+            .withFailureHandler(onDataError)
+            .getAdminDashboardData(startDate, endDate);
+        });
+
+        function onDataError(error) {
+          document.getElementById('loading').style.display = 'none';
+          var errorDiv = document.getElementById('error');
+          errorDiv.style.display = 'block';
+          errorDiv.textContent = 'Error loading data: ' + error.message;
+        }
+
+        function onDataLoaded(data) {
+          document.getElementById('loading').style.display = 'none';
+          
+          if (!data || data.length === 0) {
+              var errorDiv = document.getElementById('error');
+              errorDiv.style.display = 'block';
+              errorDiv.textContent = 'No data available to display.';
+              return;
+          }
+
+          document.getElementById('chart-container').style.display = 'block';
+
+          // Sort data by percentage, descending
+          data.sort((a, b) => b.percentage - a.percentage);
+
+          const labels = data.map(item => item.sourceName);
+          const percentages = data.map(item => item.percentage);
+          
+          const getHealthColor = (percentage) => {
+              if (percentage <= 15) return 'rgba(74, 222, 128, 0.7)'; // green-400
+              if (percentage < 30) return 'rgba(250, 204, 21, 0.7)'; // yellow-400
+              return 'rgba(248, 113, 113, 0.7)'; // red-400
+          };
+
+          const backgroundColors = percentages.map(p => getHealthColor(p));
+          
+          const ctx = document.getElementById('statsChart').getContext('2d');
+          new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: labels,
+              datasets: [{
+                label: 'Duplicate %',
+                data: percentages,
+                backgroundColor: backgroundColors,
+                borderColor: backgroundColors.map(c => c.replace('0.7', '1')),
+                borderWidth: 1
+              }]
+            },
+            options: {
+              indexAxis: 'y', // Horizontal bar chart
+              responsive: true,
+              maintainAspectRatio: false,
+              scales: {
+                x: {
+                  beginAtZero: true,
+                  max: 100,
+                  ticks: { color: '#9ca3af', font: { size: 14 } },
+                  grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                },
+                y: {
+                  ticks: { color: '#d1d5db', font: { size: 14 } },
+                  grid: { display: false }
+                }
+              },
+              plugins: {
+                legend: { display: false },
+                tooltip: {
+                  callbacks: {
+                      label: function(context) {
+                          let label = context.dataset.label || '';
+                          if (label) { label += ': '; }
+                          if (context.parsed.x !== null) { label += context.parsed.x + '%'; }
+                          const sourceData = data[context.dataIndex];
+                          label += ' (' + sourceData.totalDuplicates + ' / ' + sourceData.totalChecked + ' records)';
+                          return label;
+                      }
+                  }
+                }
+              }
+            }
+          });
+
+          const chartContainer = document.getElementById('chart-container');
+          const newHeight = Math.max(400, data.length * 40); // 40px per bar, min 400px
+          chartContainer.style.height = newHeight + 'px';
+        }
+      </script>
+    </body>
+  </html>
+  `;
+}
+
 
 /** ===========================================================================
  * 
@@ -108,7 +283,7 @@ function showDuplicateCheckerSidebar() {
 
 /**
  * Determines the context in which the sidebar is running.
- * @return {object} An object describing the context ('MASTER', 'SOURCE', or 'OTHER').
+ * @return {object} An object describing the context ('MASTER', 'SOURCE', 'OTHER', or 'OTHER_NO_HEADERS').
  */
 function getContext() {
   try {
@@ -120,26 +295,44 @@ function getContext() {
     if (SOURCE_IDS.indexOf(ssId) !== -1) {
       return { context: 'SOURCE', sourceId: ssId, sourceName: ss.getName() };
     }
-    return { context: 'OTHER' };
+    
+    // For 'OTHER' context, check for required headers
+    var sheet = SpreadsheetApp.getActiveSheet();
+    if (sheet.getLastColumn() > 0) {
+      var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function(h) { return (h || '').toString().trim().toUpperCase(); });
+      var hasFirstName = headers.indexOf('FIRST NAME') !== -1;
+      var hasLastName = headers.indexOf('LAST NAME') !== -1;
+      var hasDob = headers.indexOf('DOB') !== -1;
+      
+      if (hasFirstName && hasLastName && hasDob) {
+        return { context: 'OTHER' };
+      }
+    }
+    
+    return { context: 'OTHER_NO_HEADERS' };
+
   } catch(e) {
+    Logger.log('Error in getContext: ' + e.stack);
     return { context: 'ERROR', message: e.message };
   }
 }
 
 /**
  * Gathers duplicate health statistics for all source sheets for the admin dashboard.
+ * @param {string|null} startDateString The start date in YYYY-MM-DD format, or null.
+ * @param {string|null} endDateString The end date in YYYY-MM-DD format, or null.
  * @return {Array<object>} An array of stats objects for each source.
  */
-function getAdminDashboardData() {
+function getAdminDashboardData(startDateString, endDateString) {
   try {
     var sourceData = {};
     SOURCE_IDS.forEach(function(id) {
-        try {
-            var name = SpreadsheetApp.openById(id).getName();
-            sourceData[id] = { sourceName: name, totalChecked: 0, totalDuplicates: 0 };
-        } catch(e) {
-             sourceData[id] = { sourceName: 'Unknown Source ('+id.slice(0,5)+'...)', totalChecked: 0, totalDuplicates: 0 };
-        }
+      try {
+        var name = SpreadsheetApp.openById(id).getName();
+        sourceData[id] = { sourceId: id, sourceName: name, totalChecked: 0, totalDuplicates: 0 };
+      } catch (e) {
+        sourceData[id] = { sourceId: id, sourceName: 'Unknown Source (' + id.slice(0, 5) + '...)', totalChecked: 0, totalDuplicates: 0 };
+      }
     });
 
     var masterSs = SpreadsheetApp.openById(MASTER_SPREADSHEET_ID);
@@ -148,24 +341,33 @@ function getAdminDashboardData() {
 
     var masterValues = masterSheet.getRange(2, 1, masterSheet.getLastRow() - 1, masterSheet.getLastColumn()).getValues();
     var headers = masterSheet.getRange(1, 1, 1, masterSheet.getLastColumn()).getValues()[0].map(function(h) { return (h || '').toString().trim().toUpperCase(); });
-    
+
     var dateIndex = headers.indexOf('DATE');
     var sourceIdIndex = headers.indexOf('SHEET');
     var potDupIndex = headers.indexOf('POTENTIAL_DUPLICATES');
     if (dateIndex === -1 || sourceIdIndex === -1) return [];
 
-    var today = new Date();
-    today.setHours(0, 0, 0, 0);
-    var dayOfWeek = today.getDay();
-    var daysSinceMonday = (dayOfWeek + 6) % 7;
-    var lastMonday = new Date(today.getTime() - daysSinceMonday * 24 * 60 * 60 * 1000);
+    var useDateFilter = startDateString && endDateString;
+    var startDate, endDate;
+    if (useDateFilter) {
+        startDate = new Date(startDateString);
+        startDate.setHours(0, 0, 0, 0);
+        endDate = new Date(endDateString);
+        endDate.setHours(23, 59, 59, 999);
+    }
 
     masterValues.forEach(function(row) {
-      var entryDate = new Date(row[dateIndex]);
       var sourceId = row[sourceIdIndex];
-      if (entryDate >= lastMonday && sourceData[sourceId]) {
+      if (!sourceData[sourceId]) return;
+
+      var entryDate = row[dateIndex] ? new Date(row[dateIndex]) : null;
+      if (!entryDate || isNaN(entryDate.getTime())) return;
+        
+      var isInDateRange = !useDateFilter || (entryDate >= startDate && entryDate <= endDate);
+
+      if (isInDateRange) {
         sourceData[sourceId].totalChecked++;
-        if (row[potDupIndex] && row[potDupIndex].toString().trim() !== '') {
+        if (potDupIndex > -1 && row[potDupIndex] && row[potDupIndex].toString().trim() !== '') {
           sourceData[sourceId].totalDuplicates++;
         }
       }
@@ -174,6 +376,7 @@ function getAdminDashboardData() {
     return Object.keys(sourceData).map(function(id) {
       var data = sourceData[id];
       return {
+        sourceId: data.sourceId,
         sourceName: data.sourceName,
         totalChecked: data.totalChecked,
         totalDuplicates: data.totalDuplicates,
@@ -182,9 +385,10 @@ function getAdminDashboardData() {
     });
   } catch (e) {
     Logger.log('Error in getAdminDashboardData: ' + e.stack);
-    return [];
+    throw new Error('Could not retrieve dashboard data. ' + e.message);
   }
 }
+
 
 /**
  * Gets duplicate health for a single source sheet.
@@ -219,7 +423,7 @@ function getSourceSheetHealthData(sourceId) {
                 var entryDate = new Date(row[dateIndex]);
                 if (entryDate >= lastMonday) {
                     totalChecked++;
-                    if (row[potDupIndex] && row[potDupIndex].toString().trim() !== '') {
+                    if (potDupIndex > -1 && row[potDupIndex] && row[potDupIndex].toString().trim() !== '') {
                         totalDuplicates++;
                     }
                 }
@@ -262,12 +466,12 @@ function addRecordToSourceSheet(formData) {
 
     sheet.getRange(newRow, firstNameCol).setValue(formData.firstName);
     sheet.getRange(newRow, lastNameCol).setValue(formData.lastName);
-    sheet.getRange(newRow, dobCol).setValue(dobDate);
+    sheet.getRange(newRow, dobCol).setValue(dobDate).setNumberFormat('MM/dd/yyyy');
 
     // Set the date field if it exists
     var dateCol = headers.indexOf('DATE') + 1;
     if (dateCol) {
-      sheet.getRange(newRow, dateCol).setValue(new Date());
+      sheet.getRange(newRow, dateCol).setValue(new Date()).setNumberFormat('MM/dd/yyyy');
     }
 
     return { success: true, message: 'Record added to this sheet. Syncing...' };
@@ -280,51 +484,59 @@ function addRecordToSourceSheet(formData) {
 
 /**
  * [CONTEXT: OTHER] Calculates and returns duplicate health statistics for the sidebar.
+ * This is now updated to query the Master sheet for overall system health.
  * @return {object} An object containing percentage, totalChecked, and totalDuplicates.
  */
 function getDuplicateHealthData() {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const checkerSheet = ss.getSheetByName(CHECKER_SHEET_NAME);
-    if (!checkerSheet || checkerSheet.getLastRow() < 2) {
+    var masterSs = SpreadsheetApp.openById(MASTER_SPREADSHEET_ID);
+    var masterSheet = masterSs.getSheetByName(DEST_SHEET_NAME);
+    if (!masterSheet || masterSheet.getLastRow() < 2) {
       return { percentage: 0, totalChecked: 0, totalDuplicates: 0 };
     }
 
-    const data = checkerSheet.getRange(2, 1, checkerSheet.getLastRow() - 1, 11).getValues();
+    var masterValues = masterSheet.getRange(2, 1, masterSheet.getLastRow() - 1, masterSheet.getLastColumn()).getValues();
+    var headers = masterSheet.getRange(1, 1, 1, masterSheet.getLastColumn()).getValues()[0].map(function(h) { return (h || '').toString().trim().toUpperCase(); });
+    
+    var dateIndex = headers.indexOf('DATE');
+    var potDupIndex = headers.indexOf('POTENTIAL_DUPLICATES');
+    if (dateIndex === -1) return { percentage: 0, totalChecked: 0, totalDuplicates: 0 };
 
-    const today = new Date();
+    var today = new Date();
     today.setHours(0, 0, 0, 0);
-    const dayOfWeek = today.getDay();
-    const daysSinceMonday = (dayOfWeek + 6) % 7;
-    const lastMonday = new Date(today.getTime() - daysSinceMonday * 24 * 60 * 60 * 1000);
+    var dayOfWeek = today.getDay();
+    var daysSinceMonday = (dayOfWeek + 6) % 7;
+    var lastMonday = new Date(today.getTime() - daysSinceMonday * 24 * 60 * 60 * 1000);
 
-    let totalChecked = 0;
-    let totalDuplicates = 0;
+    var totalChecked = 0;
+    var totalDuplicates = 0;
 
-    for (const row of data) {
-      const entryDate = new Date(row[0]);
+    masterValues.forEach(function(row) {
+      var entryDate = new Date(row[dateIndex]);
       if (entryDate >= lastMonday) {
         totalChecked++;
-        const status = row[10] ? row[10].toString().toLowerCase() : '';
-        if (status.includes('duplicate') || status.includes('updated')) {
+        if (potDupIndex > -1 && row[potDupIndex] && row[potDupIndex].toString().trim() !== '') {
           totalDuplicates++;
         }
       }
-    }
+    });
 
-    const percentage = totalChecked > 0 ? Math.round((totalDuplicates / totalChecked) * 100) : 0;
-    return { percentage, totalChecked, totalDuplicates };
-
+    return {
+      totalChecked: totalChecked,
+      totalDuplicates: totalDuplicates,
+      percentage: totalChecked > 0 ? Math.round((totalDuplicates / totalChecked) * 100) : 0
+    };
   } catch (e) {
+    Logger.log('Error in getDuplicateHealthData (querying master): ' + e.stack);
     return { error: 'Failed to calculate health data: ' + e.message };
   }
 }
 
 /**
- * [CONTEXT: OTHER] Adds or updates a record from the sidebar, using the MASTER_UUID system.
+ * [CONTEXT: OTHER] Adds/updates a record, creating a log in both the local and master sheet.
  * If a duplicate is found (First/Last/DOB match), it updates the existing Master record.
  * If not found, it creates a new record in the Master sheet.
- * It ALWAYS adds a log entry to the 'Checker' sheet.
+ * It ALWAYS adds a log entry to the 'Checker' sheet in both the local and master spreadsheets.
  *
  * @param {object} formData An object containing firstName, lastName, and dob.
  * @return {object} A result object for the frontend.
@@ -332,17 +544,27 @@ function getDuplicateHealthData() {
 function addRecordAndCheckDuplicates(formData) {
   try {
     const activeSs = SpreadsheetApp.getActiveSpreadsheet();
-    const checkerSheet = getOrCreateSheet(activeSs, CHECKER_SHEET_NAME, ['DATE', 'TEST TYPE', 'FIRST NAME', 'LAST NAME', 'DOB', 'PHONE NUMBER', 'ADDRESS', 'CITY', 'STATE', 'ZIP CODE', 'STATUS']);
+    const masterSs = SpreadsheetApp.openById(MASTER_SPREADSHEET_ID);
     
+    const checkerHeaders = ['DATE', 'TEST TYPE', 'FIRST NAME', 'LAST NAME', 'DOB', 'PHONE NUMBER', 'ADDRESS', 'CITY', 'STATE', 'ZIP CODE', 'STATUS'];
+    const masterCheckerHeaders = checkerHeaders.concat(['SOURCE_SHEET_NAME']);
+    
+    // Get/Create BOTH local and master checker sheets
+    const localCheckerSheet = getOrCreateSheet(activeSs, CHECKER_SHEET_NAME, checkerHeaders);
+    const masterCheckerSheet = getOrCreateSheet(masterSs, CHECKER_SHEET_NAME, masterCheckerHeaders);
+
     const { firstName, lastName, dob: dobString } = formData;
 
     if (!firstName || !lastName || !dobString) {
       return { success: false, message: 'Error: All fields are required.' };
     }
     
-    const masterSs = SpreadsheetApp.openById(MASTER_SPREADSHEET_ID);
     const masterSheet = masterSs.getSheetByName(DEST_SHEET_NAME);
     if (!masterSheet) throw new Error('Master sheet not found.');
+
+    const masterHeaders = masterSheet.getRange(1, 1, 1, masterSheet.getLastColumn()).getValues()[0];
+    const dateColIndex1 = masterHeaders.indexOf('DATE') + 1;
+    const dobColIndex1 = masterHeaders.indexOf('DOB') + 1;
 
     const existingRecord = findMasterRecordByDetails_(firstName, lastName, dobString);
     const [year, month, day] = dobString.split('-').map(Number);
@@ -354,7 +576,9 @@ function addRecordAndCheckDuplicates(formData) {
     if (existingRecord && existingRecord.uuid) {
       // DUPLICATE FOUND: Update the existing record in the Master sheet
       const masterRow = existingRecord.row;
-      masterSheet.getRange(masterRow, 1).setValue(new Date()); // Update the main DATE field
+      const rangeToUpdate = masterSheet.getRange(masterRow, 1, 1, masterSheet.getLastColumn());
+      rangeToUpdate.setWrapStrategy(SpreadsheetApp.WrapStrategy.OVERFLOW);
+      masterSheet.getRange(masterRow, dateColIndex1).setValue(new Date()).setNumberFormat('MM/dd/yyyy');
       status = `Existing Master record updated (Row ${masterRow})`;
       duplicatesFound = 1;
     } else {
@@ -365,16 +589,34 @@ function addRecordAndCheckDuplicates(formData) {
         'manual_sidebar_entry', '', 'MANUAL', activeSs.getName(), newUuid, ''
       ];
       masterSheet.appendRow(newMasterRowData);
+      const newMasterRow = masterSheet.getLastRow();
+      const newRowRange = masterSheet.getRange(newMasterRow, 1, 1, masterSheet.getLastColumn());
+      newRowRange.setWrapStrategy(SpreadsheetApp.WrapStrategy.OVERFLOW);
+      if (dateColIndex1 > 0) newRowRange.getCell(1, dateColIndex1).setNumberFormat('MM/dd/yyyy');
+      if (dobColIndex1 > 0) newRowRange.getCell(1, dobColIndex1).setNumberFormat('MM/dd/yyyy');
+
       status = 'New record added to Master';
     }
 
-    // ALWAYS add a row to the Checker sheet for logging purposes
+    // ALWAYS add a row to the LOCAL Checker sheet for logging purposes
     const newCheckerRowData = [new Date(), '', firstName, lastName, dobForSheet, '', '', '', '', '', status];
-    const newCheckerRow = checkerSheet.getLastRow() + 1;
-    checkerSheet.getRange(newCheckerRow, 1, 1, newCheckerRowData.length).setValues([newCheckerRowData]);
+    const newLocalCheckerRow = localCheckerSheet.getLastRow() + 1;
+    const localCheckerRange = localCheckerSheet.getRange(newLocalCheckerRow, 1, 1, newCheckerRowData.length)
+    localCheckerRange.setValues([newCheckerRowData]);
+    localCheckerRange.getCell(1,1).setNumberFormat('MM/dd/yyyy');
+    localCheckerRange.getCell(1,5).setNumberFormat('MM/dd/yyyy');
+
+    // ALWAYS add a row to the MASTER Checker sheet for logging purposes
+    const newMasterCheckerRowData = [new Date(), '', firstName, lastName, dobForSheet, '', '', '', '', '', status, activeSs.getName()];
+    const newMasterCheckerRow = masterCheckerSheet.getLastRow() + 1;
+    const masterCheckerRange = masterCheckerSheet.getRange(newMasterCheckerRow, 1, 1, newMasterCheckerRowData.length)
+    masterCheckerRange.setValues([newMasterCheckerRowData]);
+    masterCheckerRange.getCell(1,1).setNumberFormat('MM/dd/yyyy');
+    masterCheckerRange.getCell(1,5).setNumberFormat('MM/dd/yyyy');
 
     if (duplicatesFound > 0) {
-      checkerSheet.getRange(newCheckerRow, 1, 1, newCheckerRowData.length).setBackground(NEW_ROW_DATE_HIGHLIGHT);
+      localCheckerRange.setBackground(NEW_ROW_DATE_HIGHLIGHT);
+      masterCheckerRange.setBackground(NEW_ROW_DATE_HIGHLIGHT);
       return {
         success: false, // Return 'false' to trigger the warning color on the frontend
         message: status,
@@ -437,6 +679,42 @@ function findMasterRecordByDetails_(firstName, lastName, dobString) {
  *                  ORIGINAL DATA CONSOLIDATOR SCRIPT
  * 
  * ===========================================================================/
+
+/**
+ * Normalizes a Google Sheet URL to its canonical form (base URL + gid).
+ * @param {string} url The URL to normalize.
+ * @return {string} The normalized URL.
+ */
+function normalizeLink(url) {
+  if (!url || typeof url !== 'string') return '';
+  try {
+    var decodedUrl = url;
+    // Attempt to decode URI components multiple times in case of double encoding
+    for (var i = 0; i < 3; i++) {
+      var nextDecoded = decodeURIComponent(decodedUrl);
+      if (nextDecoded === decodedUrl) break;
+      decodedUrl = nextDecoded;
+    }
+    
+    var idMatch = decodedUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    var gidMatch = decodedUrl.match(/[?&#]gid=(\d+)/);
+    
+    var fileId = idMatch ? idMatch[1] : null;
+    var gid = gidMatch ? gidMatch[1] : null;
+    
+    if (fileId && gid) {
+      return 'https://docs.google.com/spreadsheets/d/' + fileId + '/edit#gid=' + gid;
+    } else if (fileId) {
+      return 'https://docs.google.com/spreadsheets/d/' + fileId + '/edit';
+    }
+    return url;
+  } catch (e) {
+    return url; // Return original on error
+  }
+}
+
+// Define sanitizeSpreadsheetUrl to avoid another potential error, using the same logic.
+var sanitizeSpreadsheetUrl = normalizeLink;
 
 /* ----------------- Helpers (single source of truth for headers/indices) ----------------- */
 function applyOverflowWrapStrategy_(sheet, headerName) {
@@ -539,13 +817,15 @@ function resetMasterAndReimportAll() {
             .clearNote()
             .setBackground(null);
     }
+    // Apply formatting to the whole sheet after clearing
+    var fullSheetRange = master.getRange(1, 1, master.getMaxRows(), master.getMaxColumn());
+    fullSheetRange.setWrapStrategy(SpreadsheetApp.WrapStrategy.OVERFLOW);
+    master.getRange(2, 1, master.getMaxRows() - 1, 1).setNumberFormat('MM/dd/yyyy'); // Date
+    master.getRange(2, 5, master.getMaxRows() - 1, 1).setNumberFormat('MM/dd/yyyy'); // DOB
+
   } catch (e) {
     Logger.log('Master cleanup failed (pre): ' + e.message);
   }
-
-  applyOverflowWrapStrategy_(master, 'POTENTIAL_DUPLICATES');
-  applyOverflowWrapStrategy_(master, 'MASTER_UUID');
-
 
   ensureDestinationHeader(log, ['TIMESTAMP','REASON','SOURCE_SPREADSHEET_ID','SOURCE_SHEET_NAME','ROW_NUMBER','ORIGINAL_VALUES','LINK_TO_ROW','DUPLICATE_LINKS','TRIGGERING_USER']);
   if (log.getLastRow() > 1) {
@@ -771,60 +1051,30 @@ function createDailyConsolidationTrigger() {
 }
 
 /**
- * ** REFACTORED onEdit TRIGGER **
- * This function now prioritizes MASTER_UUID for updates. If a UUID is present on
- * an edited row, it updates the corresponding Master record. If no UUID is present,
- * it ALWAYS creates a new record in Master, preventing accidental merges.
+ * ** OVERHAULED onEdit TRIGGER **
+ * This function now determines the edited rows directly from the event object (`e.range`),
+ * making it more reliable for single edits, pastes, and deletions. It prioritizes MASTER_UUID
+ * for updates. If a UUID is present, it updates the Master record. If not, it creates a new record.
  */
 function onEditSourceInstallable(e) {
   var lock;
   try {
     lock = LockService.getDocumentLock();
-    if (!lock.tryLock(10000)) { // Increased lock wait time
+    if (!lock.tryLock(15000)) { // Increased lock wait time
         Logger.log('onEditSourceInstallable could not get lock for ' + e.source.getId());
         return;
     }
     
-    var props = PropertiesService.getScriptProperties();
     var ss = e.source;
     var sheet = e.range.getSheet();
     var spreadId = ss.getId();
     var sheetId = sheet.getSheetId();
-    var editedRow = e.range.getRow();
     var editedCol = e.range.getColumn();
-
-    if (editedRow === 1) return;
 
     var numCols = Math.max(1, sheet.getLastColumn());
     var headerUpper = sheet.getRange(1, 1, 1, numCols).getValues()[0].map(function(h) { return (h || '').toString().trim().toUpperCase(); });
 
     if (!isRelevantColumn_(headerUpper, editedCol)) return;
-    if (shouldDebounceRow_(spreadId, sheetId, editedRow, 3000)) return;
-
-    var propKey = PROP_PREFIX + spreadId + '_' + sheetId;
-    var prevLastRow = Number(props.getProperty(propKey)) || 0;
-    var currentLastRow = sheet.getLastRow();
-
-    if (!props.getProperty(propKey)) {
-        props.setProperty(propKey, String(currentLastRow));
-        return;
-    }
-    if (currentLastRow < prevLastRow) {
-        props.setProperty(propKey, String(currentLastRow));
-    }
-
-    var header = headerUpper; // Use already fetched header
-    var idxFirst = indexOfHeader(header, 'FIRST NAME');
-    var idxLast = indexOfHeader(header, 'LAST NAME');
-    var idxDOB = indexOfHeader(header, 'DOB');
-    var idxDate = indexOfHeader(header, 'DATE');
-    var idxZip = indexOfHeader(header, 'ZIP CODE');
-    var idxTest = indexOfHeader(header, 'TEST TYPE');
-
-    if (idxFirst === -1 || idxLast === -1 || idxDOB === -1) {
-        props.setProperty(propKey, String(currentLastRow));
-        return;
-    }
 
     var masterSs = SpreadsheetApp.openById(MASTER_SPREADSHEET_ID);
     var masterSheet = masterSs.getSheetByName(DEST_SHEET_NAME);
@@ -835,51 +1085,58 @@ function onEditSourceInstallable(e) {
     ensureDestinationHeader(masterSheet, destHeaders);
     var masterUuidColIndex = destHeaders.indexOf('MASTER_UUID') + 1;
     var masterLinkColIndex = destHeaders.indexOf('SHEET LINK TO ROW') + 1;
+    var masterDateColIndex = destHeaders.indexOf('DATE') + 1;
+    var masterDobColIndex = destHeaders.indexOf('DOB') + 1;
 
-    var srcUuidCol0 = indexOfHeader(header, 'MASTER_UUID');
+
+    var idxFirst = indexOfHeader(headerUpper, 'FIRST NAME');
+    var idxLast = indexOfHeader(headerUpper, 'LAST NAME');
+    var idxDOB = indexOfHeader(headerUpper, 'DOB');
+    var idxDate = indexOfHeader(headerUpper, 'DATE');
+    var idxZip = indexOfHeader(headerUpper, 'ZIP CODE');
+    var idxTest = indexOfHeader(headerUpper, 'TEST TYPE');
+    if (idxFirst === -1 || idxLast === -1 || idxDOB === -1) return;
+
+
+    var srcUuidCol0 = indexOfHeader(headerUpper, 'MASTER_UUID');
     if (srcUuidCol0 === -1) {
-        var writeCol = numCols + 1;
-        sheet.getRange(1, writeCol).setValue('MASTER_UUID');
-        srcUuidCol0 = writeCol - 1;
-        numCols++;
-        header.push('MASTER_UUID');
+        srcUuidCol0 = ensureHeaderAndReturnIndex(sheet, 'MASTER_UUID');
+        applyOverflowWrapStrategy_(sheet, 'MASTER_UUID');
+        numCols = sheet.getLastColumn();
     }
-    applyOverflowWrapStrategy_(sheet, 'MASTER_UUID');
-    
-    var potColIndex0 = indexOfHeader(header, 'POTENTIAL_DUPLICATES');
+    var potColIndex0 = indexOfHeader(headerUpper, 'POTENTIAL_DUPLICATES');
     if (potColIndex0 === -1) {
-        var writeCol2 = numCols + 1;
-        sheet.getRange(1, writeCol2).setValue('POTENTIAL_DUPLICATES');
-        potColIndex0 = writeCol2 - 1;
-        numCols++;
-        header.push('POTENTIAL_DUPLICATES');
+        potColIndex0 = ensureHeaderAndReturnIndex(sheet, 'POTENTIAL_DUPLICATES');
+        applyOverflowWrapStrategy_(sheet, 'POTENTIAL_DUPLICATES');
+        numCols = sheet.getLastColumn();
     }
-    applyOverflowWrapStrategy_(sheet, 'POTENTIAL_DUPLICATES');
 
-
-    var rowsToProcess = new Set();
-    if (currentLastRow > prevLastRow) {
-        for (var r = prevLastRow + 1; r <= currentLastRow; r++) rowsToProcess.add(r);
+    // --- REFACTORED ROW PROCESSING ---
+    var startRow = e.range.getRow();
+    var numRowsInRange = e.range.getNumRows();
+    var rowsToProcess = [];
+    for (var i = 0; i < numRowsInRange; i++) {
+        var rowNum = startRow + i;
+        if (rowNum > 1) rowsToProcess.push(rowNum);
     }
-    if (editedRow >= 2 && editedRow <= currentLastRow) rowsToProcess.add(editedRow);
-
-    var sortedRows = Array.from(rowsToProcess).sort(function(a, b) { return a - b; });
-    var maxHandledRow = prevLastRow;
+    var sortedRows = Array.from(new Set(rowsToProcess)).sort(function(a, b) { return a - b; });
+    if (sortedRows.length === 0) return;
+    // --- END REFACTOR ---
+    
+    var dataToRead = sheet.getRange(sortedRows[0], 1, sortedRows[sortedRows.length - 1] - sortedRows[0] + 1, numCols).getValues();
 
     for (var i = 0; i < sortedRows.length; i++) {
         var rowNum = sortedRows[i];
-        var rowData = sheet.getRange(rowNum, 1, 1, numCols).getValues()[0];
-        if (rowData.every(function(c) { return (c === null || String(c).trim() === ''); })) {
-            maxHandledRow = Math.max(maxHandledRow, rowNum);
-            continue;
-        }
+        if (shouldDebounceRow_(spreadId, sheetId, rowNum, 3000)) continue;
+
+        var rowData = dataToRead[rowNum - sortedRows[0]];
+        if (rowData.every(function(c) { return (c === null || String(c).trim() === ''); })) continue;
 
         var first = (rowData[idxFirst] || '').toString().trim();
         var last = (rowData[idxLast] || '').toString().trim();
         var normDate = normalizeDateValue(rowData[idxDate] || new Date(), new Date().getFullYear());
         var normDob = normalizeDateValue(rowData[idxDOB], new Date().getFullYear());
         
-        // --- CORE LOGIC CHANGE ---
         var srcUuid = (rowData[srcUuidCol0] || '').toString().trim();
         var masterRowFound = -1;
         var isNewRecord = false;
@@ -910,27 +1167,31 @@ function onEditSourceInstallable(e) {
             last,
             normDob,
             (rowData[idxZip] || '').toString().trim(),
-            spreadId, // 'SHEET' column now stores source SS ID
+            spreadId,
             'Open',
             sheet.getName(),
             ss.getName(),
             srcUuid,
             '' // Placeholder for potential duplicates
         ];
-
-        // Perform write operation
+        
+        var rowToFormat;
         if (isNewRecord) {
             masterSheet.appendRow(outputRow);
-            var newMasterRow = masterSheet.getLastRow();
-            masterSheet.getRange(newMasterRow, masterLinkColIndex).setRichTextValue(
-                SpreadsheetApp.newRichTextValue().setText('Open').setLinkUrl(sourceRowLink).build()
-            );
+            rowToFormat = masterSheet.getLastRow();
         } else {
             masterSheet.getRange(masterRowFound, 1, 1, outputRow.length).setValues([outputRow]);
-            masterSheet.getRange(masterRowFound, masterLinkColIndex).setRichTextValue(
-                SpreadsheetApp.newRichTextValue().setText('Open').setLinkUrl(sourceRowLink).build()
-            );
+            rowToFormat = masterRowFound;
         }
+
+        // Apply formatting and rich text link
+        var masterRowRange = masterSheet.getRange(rowToFormat, 1, 1, masterSheet.getLastColumn());
+        masterRowRange.setWrapStrategy(SpreadsheetApp.WrapStrategy.OVERFLOW);
+        if(masterDateColIndex > 0) masterSheet.getRange(rowToFormat, masterDateColIndex).setNumberFormat('MM/dd/yyyy');
+        if(masterDobColIndex > 0) masterSheet.getRange(rowToFormat, masterDobColIndex).setNumberFormat('MM/dd/yyyy');
+        masterSheet.getRange(rowToFormat, masterLinkColIndex).setRichTextValue(
+            SpreadsheetApp.newRichTextValue().setText('Open').setLinkUrl(sourceRowLink).build()
+        );
         
         // Check for duplicates for user feedback (but don't change write logic)
         var dobIso = (normDob instanceof Date) ? Utilities.formatDate(normDob, masterTz, 'yyyy-MM-dd') : (normDob || '').toString();
@@ -945,15 +1206,8 @@ function onEditSourceInstallable(e) {
         } else {
             try { sheet.getRange(rowNum, potColIndex0 + 1).clearContent(); } catch(e) {}
         }
-
-
-        maxHandledRow = Math.max(maxHandledRow, rowNum);
     }
 
-    if (maxHandledRow > prevLastRow) {
-      props.setProperty(propKey, String(maxHandledRow));
-    }
-    
     // Final pass to mark duplicates on the master sheet
     findAndMarkDuplicates(masterSheet, destHeaders, masterTz);
 
@@ -1210,9 +1464,17 @@ function consolidateSheetsIncremental(sourceSpreadsheetIds, destSpreadsheetId, d
 
   if (rowsToAppend.length > 0) {
     var startRow = destSheet.getLastRow() + 1;
-    destSheet.getRange(startRow, 1, rowsToAppend.length, rowsToAppend[0].length).setValues(rowsToAppend);
+    var appendedRange = destSheet.getRange(startRow, 1, rowsToAppend.length, rowsToAppend[0].length)
+    appendedRange.setValues(rowsToAppend);
+    appendedRange.setWrapStrategy(SpreadsheetApp.WrapStrategy.OVERFLOW);
+
     var linkColIndex = destHeaders.indexOf('SHEET LINK TO ROW') + 1;
-    var uuidColIndex = destHeaders.indexOf('MASTER_UUID') + 1;
+    var dateColIndex = destHeaders.indexOf('DATE') + 1;
+    var dobColIndex = destHeaders.indexOf('DOB') + 1;
+
+    if (dateColIndex > 0) destSheet.getRange(startRow, dateColIndex, rowsToAppend.length, 1).setNumberFormat('MM/dd/yyyy');
+    if (dobColIndex > 0) destSheet.getRange(startRow, dobColIndex, rowsToAppend.length, 1).setNumberFormat('MM/dd/yyyy');
+
     for (var i = 0; i < linkRichTextMeta.length; i++) {
       var meta = linkRichTextMeta[i];
       var destRow = startRow + meta.lastIndex;

@@ -41,16 +41,19 @@
                 const contexts = [
                     { context: 'MASTER' },
                     { context: 'SOURCE', sourceId: '1QgLFeJiw8vuF849rGokWEDDsKyIpd5iKY9OY_SdrA4Q', sourceName: 'DEV RCC' },
-                    { context: 'OTHER' }
+                    { context: 'OTHER' },
+                    { context: 'OTHER_NO_HEADERS' },
                 ];
                 return contexts[Math.floor(Math.random() * contexts.length)];
             },
-            getAdminDashboardData: () => {
+            getAdminDashboardData: (startDate, endDate) => {
+                 console.log("Mock fetching data for range:", startDate, "to", endDate);
                 return [
-                    { sourceName: 'MDS Unity (New)', percentage: 12, totalChecked: 89, totalDuplicates: 11 },
-                    { sourceName: 'YEST', percentage: 28, totalChecked: 50, totalDuplicates: 14 },
-                    { sourceName: 'RCC', percentage: 5, totalChecked: 120, totalDuplicates: 6 },
-                    { sourceName: 'Wave', percentage: 45, totalChecked: 35, totalDuplicates: 16 },
+                    { sourceId: '1', sourceName: 'MDS Unity (New)', percentage: 12, totalChecked: 89, totalDuplicates: 11 },
+                    { sourceId: '2', sourceName: 'YEST', percentage: 28, totalChecked: 50, totalDuplicates: 14 },
+                    { sourceId: '3', sourceName: 'RCC', percentage: 5, totalChecked: 120, totalDuplicates: 6 },
+                    { sourceId: '4', sourceName: 'Wave', percentage: 45, totalChecked: 35, totalDuplicates: 16 },
+                    { sourceId: '5', sourceName: 'TBM - ADL', percentage: 18, totalChecked: 77, totalDuplicates: 14 },
                 ];
             },
             getSourceSheetHealthData: (sourceId) => {
@@ -115,7 +118,7 @@
     // --- SHARED COMPONENTS ---
 
     const Spinner = () => (
-      <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w.org/2000/svg" fill="none" viewBox="0 0 24 24">
+      <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
       </svg>
@@ -131,10 +134,16 @@
         case MessageType.Warning: typeClasses = 'bg-orange-800/70 text-orange-300'; break;
         default: return null;
       }
+      const subtextColor = {
+        [MessageType.Success]: 'text-green-400',
+        [MessageType.Error]: 'text-red-400',
+        [MessageType.Warning]: 'text-orange-400',
+      }[type] || 'text-gray-400';
+
       return (
         <div className={`${baseClasses} ${typeClasses}`} role="alert">
           <p>{text}</p>
-          {subtext && <p className="text-red-400 font-bold mt-1">{subtext}</p>}
+          {subtext && <p className={`${subtextColor} font-semibold mt-1 text-xs`}>{subtext}</p>}
         </div>
       );
     };
@@ -227,60 +236,155 @@
     };
 
     // --- CONTEXT-SPECIFIC VIEWS ---
+    const SheetIcon = () => (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-400 group-hover:text-cyan-400 transition-colors" viewBox="0 0 20 20" fill="currentColor">
+            <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
+            <path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd" />
+        </svg>
+    );
 
     const AdminDashboard = () => {
         const [stats, setStats] = useState([]);
         const [isLoading, setIsLoading] = useState(true);
 
-        useEffect(() => {
-            const fetchData = async () => {
-                setIsLoading(true);
-                try {
-                    const data = await server.run('getAdminDashboardData');
-                    setStats(data.sort((a,b) => b.percentage - a.percentage));
-                } catch (error) {
-                    console.error('Failed to load admin data:', error);
-                } finally {
-                    setIsLoading(false);
-                }
-            };
-            fetchData();
+        const getMonday = (d) => {
+            d = new Date(d);
+            const day = d.getDay(),
+                diff = d.getDate() - day + (day === 0 ? -6 : 1);
+            return new Date(d.setDate(diff));
+        };
+
+        const [startDate, setStartDate] = useState(getMonday(new Date()));
+        const [endDate, setEndDate] = useState(new Date());
+        const [activeFilter, setActiveFilter] = useState('WTD');
+
+        const dateToInputValue = (date) => date ? date.toISOString().split('T')[0] : '';
+
+        const fetchData = useCallback(async (start, end) => {
+            setIsLoading(true);
+            try {
+                const startDateStr = start ? dateToInputValue(start) : null;
+                const endDateStr = end ? dateToInputValue(end) : null;
+                const data = await server.run('getAdminDashboardData', startDateStr, endDateStr);
+                setStats(data.sort((a, b) => b.percentage - a.percentage));
+            } catch (error) {
+                console.error('Failed to load admin data:', error);
+            } finally {
+                setIsLoading(false);
+            }
         }, []);
 
-        if (isLoading) {
-            return (
-                <div className="space-y-2">
-                    {[...Array(3)].map((_, i) => (
-                        <div key={i} className="bg-gray-800 p-3 rounded-lg animate-pulse">
-                            <div className="h-4 bg-gray-700 rounded w-1/2 mb-3"></div>
-                            <div className="h-2 bg-gray-700 rounded"></div>
-                        </div>
-                    ))}
-                </div>
-            );
-        }
+        useEffect(() => {
+            fetchData(startDate, endDate);
+        }, [startDate, endDate, fetchData]);
+        
+        const setDateRange = (filter) => {
+            const today = new Date();
+            let newStart = new Date();
+            let newEnd = new Date(today);
 
-        return (
-            <div className="space-y-3">
-                <h2 className="text-lg font-semibold text-gray-200">Source Duplication Stats</h2>
-                <p className="text-xs text-gray-400 -mt-2">Weekly duplicate percentages for each source sheet.</p>
-                {stats.length === 0 && <p className="text-gray-400 text-center py-4">No data to display.</p>}
-                <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
+            if (filter === 'WTD') {
+                newStart = getMonday(today);
+            } else if (filter === 'MTD') {
+                newStart = new Date(today.getFullYear(), today.getMonth(), 1);
+            } else if (filter === 'YTD') {
+                newStart = new Date(today.getFullYear(), 0, 1);
+            } else if (filter === 'ALL') {
+                newStart = null;
+                newEnd = null;
+            }
+            setActiveFilter(filter);
+            setStartDate(newStart);
+            setEndDate(newEnd);
+        };
+        
+        const subtitle = useMemo(() => {
+            if (activeFilter === 'ALL') return 'Duplicate percentages for all records.';
+            if (startDate && endDate) {
+              const options = { year: 'numeric', month: 'short', day: 'numeric' };
+              return `${startDate.toLocaleDateString(undefined, options)} - ${endDate.toLocaleDateString(undefined, options)}`;
+            }
+            return 'Duplicate percentages for the selected period.'
+        }, [startDate, endDate, activeFilter]);
+
+        const renderContent = () => {
+             if (isLoading) {
+                return (
+                    <div className="space-y-2 mt-4">
+                        {[...Array(3)].map((_, i) => (
+                            <div key={i} className="bg-gray-800 p-2 rounded-lg animate-pulse">
+                                <div className="h-4 bg-gray-700 rounded w-1/2 mb-3"></div>
+                                <div className="h-2 bg-gray-700 rounded"></div>
+                            </div>
+                        ))}
+                    </div>
+                );
+            }
+            if (stats.length === 0) {
+                return <p className="text-gray-400 text-center py-8">No data to display for this period.</p>;
+            }
+            return (
+                <div className="space-y-2 max-h-72 overflow-y-auto pr-1 mt-2">
                 {stats.map(stat => (
-                    <div key={stat.sourceName} className="bg-gray-800 p-2 rounded-lg border border-gray-700">
-                        <p className="text-sm font-medium text-gray-300 truncate" title={stat.sourceName}>{stat.sourceName}</p>
-                        <div className="flex items-center gap-3 mt-1">
-                            <p className={`text-xl font-bold w-16 text-right ${getHealthColor(stat.percentage)}`}>{stat.percentage}%</p>
-                            <div className="w-full bg-gray-700 rounded-full h-2">
-                                <div className={`${getHealthBarColor(stat.percentage)} h-2 rounded-full`} style={{ width: `${stat.percentage}%` }}></div>
+                    <div key={stat.sourceId} className="bg-gray-800 p-2 rounded-lg border border-gray-700">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <a href={`https://docs.google.com/spreadsheets/d/${stat.sourceId}/edit`} target="_blank" rel="noopener noreferrer" className="group" title="Open Sheet">
+                                    <SheetIcon />
+                                </a>
+                                <p className="text-sm font-medium text-gray-300 truncate" title={stat.sourceName}>{stat.sourceName}</p>
+                            </div>
+                            <div className="text-right text-xs text-gray-500">
+                                {stat.totalDuplicates} / {stat.totalChecked}
                             </div>
                         </div>
-                        <div className="text-right text-xs text-gray-500 mt-1">
-                            {stat.totalDuplicates} / {stat.totalChecked} records
+                        <div className="flex items-center gap-2 mt-1.5">
+                            <p className={`text-lg font-bold w-12 text-right ${getHealthColor(stat.percentage)}`}>{stat.percentage}%</p>
+                            <div className="w-full bg-gray-700 rounded-full h-1.5">
+                                <div className={`${getHealthBarColor(stat.percentage)} h-1.5 rounded-full`} style={{ width: `${stat.percentage}%` }}></div>
+                            </div>
                         </div>
                     </div>
                 ))}
                 </div>
+            );
+        };
+
+        const FilterButton = ({ label, filter }) => {
+          const isActive = activeFilter === filter;
+          return (
+            <button
+              onClick={() => setDateRange(filter)}
+              className={`px-2 py-0.5 text-xs rounded-full transition-colors ${
+                isActive
+                  ? 'bg-cyan-600 text-white font-semibold'
+                  : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+              }`}
+            >
+              {label}
+            </button>
+          );
+        };
+
+        return (
+            <div className="space-y-3">
+                <h2 className="text-lg font-semibold text-gray-200">Source Duplication Stats</h2>
+                <p className="text-xs text-gray-400 -mt-2">{subtitle}</p>
+                
+                <div className="bg-gray-800 border border-gray-700 p-2 rounded-lg space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                        <input type="date" value={dateToInputValue(startDate)} onChange={(e) => { setStartDate(new Date(e.target.value+'T00:00:00')); setActiveFilter('');}} className="w-full text-xs bg-gray-700 border border-gray-600 rounded py-1 px-2 text-gray-200 focus:outline-none focus:ring-1 focus:ring-cyan-500" />
+                        <input type="date" value={dateToInputValue(endDate)} onChange={(e) => { setEndDate(new Date(e.target.value+'T00:00:00')); setActiveFilter('');}} className="w-full text-xs bg-gray-700 border border-gray-600 rounded py-1 px-2 text-gray-200 focus:outline-none focus:ring-1 focus:ring-cyan-500" />
+                    </div>
+                    <div className="flex justify-center items-center gap-2 pt-1">
+                        <FilterButton label="WTD" filter="WTD" />
+                        <FilterButton label="MTD" filter="MTD" />
+                        <FilterButton label="YTD" filter="YTD" />
+                        <FilterButton label="ALL" filter="ALL" />
+                    </div>
+                </div>
+
+                {renderContent()}
             </div>
         );
     };
@@ -337,7 +441,7 @@
                     data={healthData} 
                     isLoading={isLoadingHealth} 
                     title={contextData.sourceName}
-                    subtitle="Duplicate stats for this source sheet."
+                    subtitle="Duplicate stats for this source (current week)."
                 />
                 <div className="h-10 flex items-center justify-center">
                     {message.text && <Message text={message.text} type={message.type} />}
@@ -384,7 +488,7 @@
                     fetchHealthData();
                 } else {
                     if (response.duplicatesFound > 0) {
-                        setMessage({ text: response.message, subtext: 'USE STAR LABS', type: MessageType.Warning });
+                        setMessage({ text: response.message, subtext: 'Please check Master sheet for details.', type: MessageType.Warning });
                         fetchHealthData();
                     } else {
                         setMessage({ text: response.message, type: MessageType.Error });
@@ -402,7 +506,7 @@
               <DuplicateHealth 
                 data={healthData} 
                 isLoading={isLoadingHealth}
-                title="Duplicate Health"
+                title="Overall Duplicate Health"
                 subtitle="Percentage of duplicates since previous Monday."
               />
               <div className="h-10 flex items-center justify-center">
@@ -441,6 +545,12 @@
                     return <SourceSheetView contextData={context.data} />;
                 case 'OTHER':
                     return <DefaultView />;
+                case 'OTHER_NO_HEADERS':
+                    return <Message 
+                        text="This sheet is not configured for data entry." 
+                        subtext="Please ensure it has 'FIRST NAME', 'LAST NAME', and 'DOB' columns."
+                        type={MessageType.Warning} 
+                    />;
                 case 'ERROR':
                     return <Message text={context.data.message} type={MessageType.Error} />;
                 default:
