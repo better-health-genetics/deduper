@@ -11,29 +11,16 @@
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <!-- Babel for JSX Transpilation -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-<script type="importmap">
-{
-  "imports": {
-    "react": "https://aistudiocdn.com/react@^19.1.1",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.1.1/",
-    "react/": "https://aistudiocdn.com/react@^19.1.1/"
-  }
-}
-</script>
 </head>
 <body class="bg-gray-800">
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useEffect, useCallback } = React;
+    const { useState, useEffect, useCallback, useMemo } = React;
 
     // --- ENVIRONMENT-AWARE SERVER CONNECTOR ---
-    // This object intelligently switches between the real Google Apps Script
-    // backend and a local mock server for development.
     const server = (() => {
-      // Check if we are in the Google Apps Script environment
       if (window.google && window.google.script) {
-        console.log("Running in Google Apps Script environment.");
         return {
           run(functionName, ...args) {
             return new Promise((resolve, reject) => {
@@ -46,33 +33,57 @@
         };
       } else {
         // --- MOCK SERVER for local development ---
-        // This part runs only when you open the HTML file directly in your browser.
         console.warn("Running in local mock mode. 'google.script.run' not found.");
         const MOCK_LATENCY = 800;
         
         const mockDatabase = {
-          getDuplicateHealthData: () => {
-            const totalChecked = Math.floor(Math.random() * 150) + 10;
-            const totalDuplicates = Math.floor(Math.random() * (totalChecked * 0.45));
-            const percentage = totalChecked > 0 ? Math.round((totalDuplicates / totalChecked) * 100) : 0;
-            return { percentage, totalChecked, totalDuplicates };
-          },
-          addRecordAndCheckDuplicates: (formData) => {
-            if (!formData.firstName || !formData.lastName || !formData.dob) {
-              return { success: false, message: 'Error: All mandatory fields must be provided.' };
+            getContext: () => {
+                const contexts = [
+                    { context: 'MASTER' },
+                    { context: 'SOURCE', sourceId: '1QgLFeJiw8vuF849rGokWEDDsKyIpd5iKY9OY_SdrA4Q', sourceName: 'DEV RCC' },
+                    { context: 'OTHER' }
+                ];
+                return contexts[Math.floor(Math.random() * contexts.length)];
+            },
+            getAdminDashboardData: () => {
+                return [
+                    { sourceName: 'MDS Unity (New)', percentage: 12, totalChecked: 89, totalDuplicates: 11 },
+                    { sourceName: 'YEST', percentage: 28, totalChecked: 50, totalDuplicates: 14 },
+                    { sourceName: 'RCC', percentage: 5, totalChecked: 120, totalDuplicates: 6 },
+                    { sourceName: 'Wave', percentage: 45, totalChecked: 35, totalDuplicates: 16 },
+                ];
+            },
+            getSourceSheetHealthData: (sourceId) => {
+                const totalChecked = Math.floor(Math.random() * 50) + 5;
+                const totalDuplicates = Math.floor(Math.random() * (totalChecked * 0.35));
+                const percentage = totalChecked > 0 ? Math.round((totalDuplicates / totalChecked) * 100) : 0;
+                return { percentage, totalChecked, totalDuplicates };
+            },
+            getDuplicateHealthData: () => { // For 'OTHER' context
+                const totalChecked = Math.floor(Math.random() * 150) + 10;
+                const totalDuplicates = Math.floor(Math.random() * (totalChecked * 0.45));
+                const percentage = totalChecked > 0 ? Math.round((totalDuplicates / totalChecked) * 100) : 0;
+                return { percentage, totalChecked, totalDuplicates };
+            },
+            addRecordAndCheckDuplicates: (formData) => { // For 'OTHER' context
+                if (!formData.firstName || !formData.lastName || !formData.dob) {
+                    return { success: false, message: 'Error: All mandatory fields must be provided.' };
+                }
+                const isDuplicate = Math.random() > 0.6;
+                if (isDuplicate) {
+                    const numDupes = Math.floor(Math.random() * 4) + 1;
+                    return {
+                        success: false,
+                        message: `Record added to "Checker" tab. ${numDupes} duplicates found.`,
+                        duplicatesFound: numDupes,
+                    };
+                } else {
+                    return { success: true, message: 'Record added to "Checker" tab. No duplicates found.' };
+                }
+            },
+            addRecordToSourceSheet: (formData) => { // For 'SOURCE' context
+                return { success: true, message: 'Record added to sheet. Syncing to Master...' };
             }
-            const isDuplicate = Math.random() > 0.6; // 40% chance of duplicate
-            if (isDuplicate) {
-              const numDupes = Math.floor(Math.random() * 4) + 1;
-              return {
-                success: false,
-                message: `Record added to "Checker" tab. ${numDupes} duplicates found.`,
-                duplicatesFound: numDupes,
-              };
-            } else {
-              return { success: true, message: 'Record added to "Checker" tab. No duplicates found.' };
-            }
-          }
         };
 
         return {
@@ -93,8 +104,7 @@
       }
     })();
 
-
-    // --- ENUMS & TYPES (defined inline) ---
+    // --- ENUMS ---
     const MessageType = {
       Success: 'Success',
       Error: 'Error',
@@ -102,15 +112,10 @@
       None: 'None',
     };
 
-    // --- COMPONENTS ---
+    // --- SHARED COMPONENTS ---
 
     const Spinner = () => (
-      <svg
-        className="animate-spin h-5 w-5 text-white"
-        xmlns="http://www.w3.org/2000/svg"
-        fill="none"
-        viewBox="0 0 24 24"
-      >
+      <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w.org/2000/svg" fill="none" viewBox="0 0 24 24">
         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
       </svg>
@@ -118,24 +123,14 @@
 
     const Message = ({ text, type, subtext }) => {
       if (!text) return null;
-
       const baseClasses = 'text-sm font-medium text-center p-1.5 rounded-md w-full';
       let typeClasses = '';
-
       switch (type) {
-        case MessageType.Success:
-          typeClasses = 'bg-green-900/50 text-green-300';
-          break;
-        case MessageType.Error:
-          typeClasses = 'bg-red-900/50 text-red-300';
-          break;
-        case MessageType.Warning:
-          typeClasses = 'bg-orange-800/70 text-orange-300';
-          break;
-        default:
-          return null;
+        case MessageType.Success: typeClasses = 'bg-green-900/50 text-green-300'; break;
+        case MessageType.Error: typeClasses = 'bg-red-900/50 text-red-300'; break;
+        case MessageType.Warning: typeClasses = 'bg-orange-800/70 text-orange-300'; break;
+        default: return null;
       }
-
       return (
         <div className={`${baseClasses} ${typeClasses}`} role="alert">
           <p>{text}</p>
@@ -144,18 +139,18 @@
       );
     };
 
-    const DuplicateHealth = ({ data, isLoading }) => {
-      const getHealthColor = (percentage) => {
+    const getHealthColor = (percentage) => {
         if (percentage <= 15) return 'text-green-400';
         if (percentage < 30) return 'text-yellow-400';
         return 'text-red-400';
-      };
-      const getHealthBarColor = (percentage) => {
+    };
+    const getHealthBarColor = (percentage) => {
         if (percentage <= 15) return 'bg-green-500';
         if (percentage < 30) return 'bg-yellow-500';
         return 'bg-red-500';
-      };
+    };
 
+    const DuplicateHealth = ({ data, isLoading, title, subtitle }) => {
       if (isLoading) {
         return (
           <div className="bg-gray-800 p-3 rounded-lg animate-pulse">
@@ -167,11 +162,7 @@
       }
 
       if (!data) {
-        return (
-            <div className="bg-gray-800 p-3 rounded-lg text-center text-gray-400">
-                No health data available.
-            </div>
-        );
+        return <div className="bg-gray-800 p-3 rounded-lg text-center text-gray-400">No health data available.</div>;
       }
 
       const { percentage } = data;
@@ -180,8 +171,8 @@
       
       return (
         <div className="bg-gray-800 p-3 rounded-lg border border-gray-700">
-          <h2 className="text-lg font-semibold text-gray-200 mb-1">Duplicate Health</h2>
-          <p className="text-xs text-gray-400 mb-2">Percentage of duplicates since previous Monday.</p>
+          <h2 className="text-lg font-semibold text-gray-200 mb-1">{title}</h2>
+          <p className="text-xs text-gray-400 mb-2">{subtitle}</p>
           <div className="flex items-center gap-4">
             <p className={`text-4xl font-bold ${colorClass}`}>{percentage}%</p>
             <div className="w-full">
@@ -190,10 +181,7 @@
                     <span>{data.totalChecked} Total</span>
                 </div>
                 <div className="w-full bg-gray-700 rounded-full h-2.5">
-                    <div 
-                        className={`${barColorClass} h-2.5 rounded-full transition-all duration-500 ease-out`} 
-                        style={{ width: `${percentage}%` }}
-                    ></div>
+                    <div className={`${barColorClass} h-2.5 rounded-full transition-all duration-500 ease-out`} style={{ width: `${percentage}%` }}></div>
                 </div>
             </div>
           </div>
@@ -219,138 +207,269 @@
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label htmlFor="firstName" className="block text-sm font-medium text-gray-300 mb-1">
-                First Name
-              </label>
-              <input
-                type="text"
-                id="firstName"
-                value={firstName}
-                onChange={(e) => setFirstName(e.target.value)}
-                required
-                className="w-full bg-gray-800 border border-gray-600 rounded-md shadow-sm py-1.5 px-3 text-gray-100 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
-              />
+              <label htmlFor="firstName" className="block text-sm font-medium text-gray-300 mb-1">First Name</label>
+              <input type="text" id="firstName" value={firstName} onChange={(e) => setFirstName(e.target.value)} required className="w-full bg-gray-800 border border-gray-600 rounded-md shadow-sm py-1.5 px-3 text-gray-100 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500" />
             </div>
             <div>
-              <label htmlFor="lastName" className="block text-sm font-medium text-gray-300 mb-1">
-                Last Name
-              </label>
-              <input
-                type="text"
-                id="lastName"
-                value={lastName}
-                onChange={(e) => setLastName(e.target.value)}
-                required
-                className="w-full bg-gray-800 border border-gray-600 rounded-md shadow-sm py-1.5 px-3 text-gray-100 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
-              />
+              <label htmlFor="lastName" className="block text-sm font-medium text-gray-300 mb-1">Last Name</label>
+              <input type="text" id="lastName" value={lastName} onChange={(e) => setLastName(e.target.value)} required className="w-full bg-gray-800 border border-gray-600 rounded-md shadow-sm py-1.5 px-3 text-gray-100 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500" />
             </div>
           </div>
           <div>
-            <label htmlFor="dob" className="block text-sm font-medium text-gray-300 mb-1">
-              Date of Birth
-            </label>
-            <input
-              type="date"
-              id="dob"
-              value={dob}
-              onChange={(e) => setDob(e.target.value)}
-              required
-              className="w-full bg-gray-800 border border-gray-600 rounded-md shadow-sm py-1.5 px-3 text-gray-100 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
-            />
+            <label htmlFor="dob" className="block text-sm font-medium text-gray-300 mb-1">Date of Birth</label>
+            <input type="date" id="dob" value={dob} onChange={(e) => setDob(e.target.value)} required className="w-full bg-gray-800 border border-gray-600 rounded-md shadow-sm py-1.5 px-3 text-gray-100 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500" />
           </div>
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-cyan-600 hover:bg-cyan-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-cyan-500 disabled:bg-gray-500 disabled:cursor-not-allowed transition-colors"
-          >
+          <button type="submit" disabled={isSubmitting} className="w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-cyan-600 hover:bg-cyan-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-cyan-500 disabled:bg-gray-500 disabled:cursor-not-allowed transition-colors">
             {isSubmitting ? <Spinner /> : 'Add & Check Record'}
           </button>
         </form>
       );
     };
 
-    // --- MAIN APP COMPONENT ---
+    // --- CONTEXT-SPECIFIC VIEWS ---
 
-    const App = () => {
-      const [healthData, setHealthData] = useState(null);
-      const [isLoadingHealth, setIsLoadingHealth] = useState(true);
-      const [isSubmitting, setIsSubmitting] = useState(false);
-      const [message, setMessage] = useState({ text: '', subtext: '', type: MessageType.None });
+    const AdminDashboard = () => {
+        const [stats, setStats] = useState([]);
+        const [isLoading, setIsLoading] = useState(true);
 
-      const fetchHealthData = useCallback(async () => {
-        setIsLoadingHealth(true);
-        try {
-          const data = await server.run('getDuplicateHealthData');
-          if (data && data.error) throw new Error(data.error);
-          setHealthData(data);
-        } catch (error) {
-          setMessage({ text: 'Failed to load health data.', type: MessageType.Error });
-          console.error(error);
-        } finally {
-          setIsLoadingHealth(false);
+        useEffect(() => {
+            const fetchData = async () => {
+                setIsLoading(true);
+                try {
+                    const data = await server.run('getAdminDashboardData');
+                    setStats(data.sort((a,b) => b.percentage - a.percentage));
+                } catch (error) {
+                    console.error('Failed to load admin data:', error);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+            fetchData();
+        }, []);
+
+        if (isLoading) {
+            return (
+                <div className="space-y-2">
+                    {[...Array(3)].map((_, i) => (
+                        <div key={i} className="bg-gray-800 p-3 rounded-lg animate-pulse">
+                            <div className="h-4 bg-gray-700 rounded w-1/2 mb-3"></div>
+                            <div className="h-2 bg-gray-700 rounded"></div>
+                        </div>
+                    ))}
+                </div>
+            );
         }
-      }, []);
 
-      useEffect(() => {
-        fetchHealthData();
-      }, [fetchHealthData]);
-      
-      // Auto-clear message after a delay
-      useEffect(() => {
-        if (message.text) {
-          const timer = setTimeout(() => {
-            setMessage({ text: '', subtext: '', type: MessageType.None });
-          }, 7000); // 7 seconds
-          
-          return () => clearTimeout(timer); // Cleanup timer on re-render
-        }
-      }, [message]);
+        return (
+            <div className="space-y-3">
+                <h2 className="text-lg font-semibold text-gray-200">Source Duplication Stats</h2>
+                <p className="text-xs text-gray-400 -mt-2">Weekly duplicate percentages for each source sheet.</p>
+                {stats.length === 0 && <p className="text-gray-400 text-center py-4">No data to display.</p>}
+                <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
+                {stats.map(stat => (
+                    <div key={stat.sourceName} className="bg-gray-800 p-2 rounded-lg border border-gray-700">
+                        <p className="text-sm font-medium text-gray-300 truncate" title={stat.sourceName}>{stat.sourceName}</p>
+                        <div className="flex items-center gap-3 mt-1">
+                            <p className={`text-xl font-bold w-16 text-right ${getHealthColor(stat.percentage)}`}>{stat.percentage}%</p>
+                            <div className="w-full bg-gray-700 rounded-full h-2">
+                                <div className={`${getHealthBarColor(stat.percentage)} h-2 rounded-full`} style={{ width: `${stat.percentage}%` }}></div>
+                            </div>
+                        </div>
+                        <div className="text-right text-xs text-gray-500 mt-1">
+                            {stat.totalDuplicates} / {stat.totalChecked} records
+                        </div>
+                    </div>
+                ))}
+                </div>
+            </div>
+        );
+    };
 
-      const handleAddRecord = async (formData) => {
-        setIsSubmitting(true);
-        setMessage({ text: '', type: MessageType.None });
-        try {
-          const response = await server.run('addRecordAndCheckDuplicates', formData);
-          
-          if (response.success) {
-            setMessage({ text: response.message, type: MessageType.Success });
-            fetchHealthData(); 
-          } else {
-            if (response.duplicatesFound && response.duplicatesFound > 0) {
-              setMessage({
-                text: response.message,
-                subtext: 'USE STAR LABS',
-                type: MessageType.Warning,
-              });
-              // Force an immediate UI update for health data
-              fetchHealthData();
-            } else {
-              setMessage({ text: response.message, type: MessageType.Error });
+    const SourceSheetView = ({ contextData }) => {
+        const [healthData, setHealthData] = useState(null);
+        const [isLoadingHealth, setIsLoadingHealth] = useState(true);
+        const [isSubmitting, setIsSubmitting] = useState(false);
+        const [message, setMessage] = useState({ text: '', subtext: '', type: MessageType.None });
+
+        const fetchHealthData = useCallback(async () => {
+            setIsLoadingHealth(true);
+            try {
+                const data = await server.run('getSourceSheetHealthData', contextData.sourceId);
+                setHealthData(data);
+            } catch (error) {
+                setMessage({ text: 'Failed to load health data.', type: MessageType.Error });
+            } finally {
+                setIsLoadingHealth(false);
             }
-          }
-        } catch (error) {
-          setMessage({ text: error.message || 'An unexpected error occurred.', type: MessageType.Error });
-        } finally {
-          setIsSubmitting(false);
-        }
-      };
+        }, [contextData.sourceId]);
 
-      return (
-        <div className="min-h-screen bg-gray-800 text-gray-100 p-2 font-sans">
-          <div className="max-w-md mx-auto bg-gray-900 shadow-2xl rounded-lg overflow-hidden">
-            <header className="p-4 bg-gray-700 border-b border-gray-600">
-              <h1 className="text-xl font-bold text-center text-cyan-400">BHG DeDuper</h1>
-            </header>
-            <main className="p-4 space-y-4">
-              <DuplicateHealth data={healthData} isLoading={isLoadingHealth} />
+        useEffect(() => {
+            fetchHealthData();
+        }, [fetchHealthData]);
+
+        useEffect(() => {
+            if (message.text) {
+                const timer = setTimeout(() => setMessage({ text: '', type: MessageType.None }), 5000);
+                return () => clearTimeout(timer);
+            }
+        }, [message]);
+
+        const handleAddRecord = async (formData) => {
+            setIsSubmitting(true);
+            setMessage({ text: '', type: MessageType.None });
+            try {
+                const response = await server.run('addRecordToSourceSheet', formData);
+                if (response.success) {
+                    setMessage({ text: response.message, type: MessageType.Success });
+                } else {
+                    setMessage({ text: response.message, type: MessageType.Error });
+                }
+            } catch (error) {
+                setMessage({ text: error.message || 'An unexpected error occurred.', type: MessageType.Error });
+            } finally {
+                setIsSubmitting(false);
+            }
+        };
+
+        return (
+            <div className="space-y-4">
+                <DuplicateHealth 
+                    data={healthData} 
+                    isLoading={isLoadingHealth} 
+                    title={contextData.sourceName}
+                    subtitle="Duplicate stats for this source sheet."
+                />
+                <div className="h-10 flex items-center justify-center">
+                    {message.text && <Message text={message.text} type={message.type} />}
+                </div>
+                <AddRecordForm onSubmit={handleAddRecord} isSubmitting={isSubmitting} />
+            </div>
+        );
+    };
+    
+    const DefaultView = () => {
+        const [healthData, setHealthData] = useState(null);
+        const [isLoadingHealth, setIsLoadingHealth] = useState(true);
+        const [isSubmitting, setIsSubmitting] = useState(false);
+        const [message, setMessage] = useState({ text: '', subtext: '', type: MessageType.None });
+
+        const fetchHealthData = useCallback(async () => {
+            setIsLoadingHealth(true);
+            try {
+                const data = await server.run('getDuplicateHealthData');
+                setHealthData(data);
+            } catch (error) {
+                setMessage({ text: 'Failed to load health data.', type: MessageType.Error });
+            } finally {
+                setIsLoadingHealth(false);
+            }
+        }, []);
+
+        useEffect(() => { fetchHealthData(); }, [fetchHealthData]);
+
+        useEffect(() => {
+            if (message.text) {
+                const timer = setTimeout(() => setMessage({ text: '', type: MessageType.None }), 7000);
+                return () => clearTimeout(timer);
+            }
+        }, [message]);
+
+        const handleAddRecord = async (formData) => {
+            setIsSubmitting(true);
+            setMessage({ text: '', type: MessageType.None });
+            try {
+                const response = await server.run('addRecordAndCheckDuplicates', formData);
+                if (response.success) {
+                    setMessage({ text: response.message, type: MessageType.Success });
+                    fetchHealthData();
+                } else {
+                    if (response.duplicatesFound > 0) {
+                        setMessage({ text: response.message, subtext: 'USE STAR LABS', type: MessageType.Warning });
+                        fetchHealthData();
+                    } else {
+                        setMessage({ text: response.message, type: MessageType.Error });
+                    }
+                }
+            } catch (error) {
+                setMessage({ text: error.message || 'An unexpected error occurred.', type: MessageType.Error });
+            } finally {
+                setIsSubmitting(false);
+            }
+        };
+
+        return (
+            <div className="space-y-4">
+              <DuplicateHealth 
+                data={healthData} 
+                isLoading={isLoadingHealth}
+                title="Duplicate Health"
+                subtitle="Percentage of duplicates since previous Monday."
+              />
               <div className="h-10 flex items-center justify-center">
                  {message.text && <Message text={message.text} subtext={message.subtext} type={message.type} />}
               </div>
               <AddRecordForm onSubmit={handleAddRecord} isSubmitting={isSubmitting} />
-            </main>
-          </div>
-        </div>
-      );
+            </div>
+        );
+    };
+
+    // --- MAIN APP COMPONENT (CONTEXT ROUTER) ---
+
+    const App = () => {
+        const [context, setContext] = useState({ type: 'LOADING' });
+
+        useEffect(() => {
+            const determineContext = async () => {
+                try {
+                    const contextData = await server.run('getContext');
+                    setContext({ type: contextData.context, data: contextData });
+                } catch (error) {
+                    console.error("Failed to get context", error);
+                    setContext({ type: 'ERROR', data: { message: 'Could not connect to the backend.' } });
+                }
+            };
+            determineContext();
+        }, []);
+
+        const renderContent = () => {
+            switch (context.type) {
+                case 'LOADING':
+                    return <div className="p-8 text-center flex justify-center"><Spinner /></div>;
+                case 'MASTER':
+                    return <AdminDashboard />;
+                case 'SOURCE':
+                    return <SourceSheetView contextData={context.data} />;
+                case 'OTHER':
+                    return <DefaultView />;
+                case 'ERROR':
+                    return <Message text={context.data.message} type={MessageType.Error} />;
+                default:
+                    return <Message text="Unknown application context." type={MessageType.Error} />;
+            }
+        };
+        
+        const headerTitle = useMemo(() => {
+          switch (context.type) {
+            case 'MASTER': return "Admin Dashboard";
+            case 'SOURCE': return context.data.sourceName || "Source DeDuper";
+            default: return "BHG DeDuper";
+          }
+        }, [context]);
+
+        return (
+            <div className="min-h-screen bg-gray-800 text-gray-100 p-2 font-sans">
+                <div className="max-w-md mx-auto bg-gray-900 shadow-2xl rounded-lg overflow-hidden">
+                    <header className="p-4 bg-gray-700 border-b border-gray-600">
+                        <h1 className="text-xl font-bold text-center text-cyan-400 truncate" title={headerTitle}>
+                          {headerTitle}
+                        </h1>
+                    </header>
+                    <main className="p-4">
+                        {renderContent()}
+                    </main>
+                </div>
+            </div>
+        );
     };
 
     // --- RENDER THE APP ---
