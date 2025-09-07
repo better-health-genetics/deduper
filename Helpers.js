@@ -1,8 +1,22 @@
+
 /** ===========================================================================
  * 
  *                       HELPER FUNCTIONS
  * 
  * ===========================================================================/
+
+/**
+ * Retrieves the Gemini API key from Script Properties.
+ * @return {string} The API key.
+ * @throws {Error} If the API key has not been set.
+ */
+function getApiKey_() {
+  var apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  if (!apiKey) {
+    throw new Error('Gemini API key not found. Please set it using the "Data Consolidator > 🔑 Set Gemini API Key" menu item.');
+  }
+  return apiKey;
+}
 
 /**
  * Helper for the sidebar: Finds a record in the Master sheet by First, Last, and DOB.

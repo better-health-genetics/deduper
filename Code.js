@@ -1,3 +1,4 @@
+
 /****************************************************************************************************
  * ___  ____ ___ ___ ____ ____    _  _ ____ ____ _    ___ _  _    ____ ____ _  _ ____ ___ _ ____ ____ 
  * |__] |___  |   |  |___ |__/    |__| |___ |__| |     |  |__|    | __ |___ |\ | |___  |  | |    [__  
@@ -26,6 +27,8 @@ function onOpen() {
       .addSeparator()
       .addItem('Show DeDuper Sidebar', 'showDuplicateCheckerSidebar')
       .addItem('Open Stats Dashboard', 'ui_openDashboard_')
+      .addSeparator()
+      .addItem('🔑 Set Gemini API Key', 'ui_setApiKey_')
       .addSeparator()
       .addItem('🧭 Seed Source Last Rows', 'ui_initSourceLastRows_')
       .addItem('🧭 Seed Consolidation Cursors', 'ui_initConsolidateLastRows_')

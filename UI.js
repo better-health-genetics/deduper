@@ -1,3 +1,4 @@
+
 /** ===========================================================================
  * 
  *                        UI & MENU FUNCTIONS
@@ -24,6 +25,30 @@ function ui_openDashboard_() {
     .setHeight(100);
   SpreadsheetApp.getUi().showModalDialog(html, 'Opening Dashboard...');
 }
+
+/**
+ * Provides a UI prompt for the user to set their Gemini API key.
+ * The key is stored securely in Script Properties.
+ */
+function ui_setApiKey_() {
+  var ui = SpreadsheetApp.getUi();
+  var result = ui.prompt(
+    'Set Gemini API Key',
+    'Please enter your Google AI Gemini API key. This is stored securely in your script properties and is required for the AI Summary feature.',
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (result.getSelectedButton() == ui.Button.OK) {
+    var apiKey = result.getResponseText().trim();
+    if (apiKey) {
+      PropertiesService.getScriptProperties().setProperty('GEMINI_API_KEY', apiKey);
+      SpreadsheetApp.getActive().toast('Gemini API Key saved successfully.', 'Success', 5);
+    } else {
+      ui.alert('API Key cannot be empty.');
+    }
+  }
+}
+
 
 /**
  * Returns the HTML content for the dashboard web app.

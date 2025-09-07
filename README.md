@@ -1,3 +1,4 @@
+
 # BHG DeDuper & Data Consolidator
 
 ## 1. Overview
@@ -25,6 +26,7 @@ The sidebar's UI and functionality intelligently adapt to the user's current loc
 
 -   **Admin Dashboard View (in Master Sheet)**:
     -   When opened in the Master Sheet, it displays a comprehensive dashboard of duplication statistics for all source sheets.
+    -   **New! AI Health Summary**: Features a "Generate Analysis" button that uses the Google Gemini API to provide a natural language summary of the data quality, highlighting problem areas and successes.
     -   Features dynamic date-range filtering (WTD, MTD, YTD, ALL) to analyze data quality over different periods.
     -   Provides direct links to each source sheet for quick navigation.
 
@@ -88,6 +90,7 @@ The entire system is powered by a Google Apps Script project attached to the **M
 
 5.  **Initialize the System**:
     *   Go back to your Master Google Sheet and refresh the page. A new menu named **"Data Consolidator"** should appear, and the sidebar should open automatically.
+    *   **CRITICAL: Set API Key**: Go to `Data Consolidator` > `🔑 Set Gemini API Key`. Paste your Google AI Gemini API key into the prompt. This is required for the "AI Health Summary" feature.
     *   Use the menu to run the initial setup functions:
         *   `Data Consolidator` > `⚙️ Create Source onEdit Triggers`
         *   `Data Consolidator` > `⏰ Create Daily Consolidation (2am)`

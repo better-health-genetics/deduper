@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -55,6 +56,12 @@
                     { sourceId: '4', sourceName: 'Wave', percentage: 45, totalChecked: 35, totalDuplicates: 16 },
                     { sourceId: '5', sourceName: 'TBM - ADL', percentage: 18, totalChecked: 77, totalDuplicates: 14 },
                 ];
+            },
+            getGeminiHealthSummary: (stats) => {
+                if (!stats || stats.length === 0) return "No stats provided for analysis.";
+                const worst = stats.reduce((max, p) => p.percentage > max.percentage ? p : max, stats[0]);
+                const best = stats.reduce((min, p) => p.percentage < min.percentage ? p : min, stats[0]);
+                return `Overall data health shows some areas for improvement. The most significant challenge is with '${worst.sourceName}', which has a high ${worst.percentage}% duplicate rate. On a positive note, '${best.sourceName}' is performing very well with only ${best.percentage}% duplicates.`;
             },
             getSourceSheetHealthData: (sourceId) => {
                 const totalChecked = Math.floor(Math.random() * 50) + 5;
@@ -243,6 +250,60 @@
         </svg>
     );
 
+    const GeminiIcon = () => (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12.5 5.515c1.334-2.134 4.133-2.68 6.267-.985c2.134 1.694 2.68 4.827.985 6.961l-7.252 8.016l-7.252-8.016c-1.695-2.134-.94-5.267 1.194-6.961c2.134-1.695 4.933-.94 6.267.985Z"/>
+        </svg>
+    );
+
+    const GeminiHealthCard = ({ stats, isLoadingStats }) => {
+        const [summary, setSummary] = useState('');
+        const [isLoadingSummary, setIsLoadingSummary] = useState(false);
+        const [error, setError] = useState('');
+
+        const handleGenerateSummary = useCallback(async () => {
+            if (!stats || stats.length === 0) {
+                setError('There is no data to analyze for the selected period.');
+                return;
+            }
+            setIsLoadingSummary(true);
+            setError('');
+            setSummary('');
+            try {
+                const result = await server.run('getGeminiHealthSummary', stats);
+                setSummary(result);
+            } catch (err) {
+                setError(err.message || 'Failed to generate summary.');
+            } finally {
+                setIsLoadingSummary(false);
+            }
+        }, [stats]);
+
+        return (
+            <div className="bg-gray-800 border border-gray-700 rounded-lg p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                    <h3 className="text-md font-semibold text-gray-200 flex items-center gap-2">
+                        <GeminiIcon />
+                        AI Health Summary
+                    </h3>
+                    <button
+                        onClick={handleGenerateSummary}
+                        disabled={isLoadingStats || isLoadingSummary}
+                        className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-white bg-gradient-to-r from-cyan-600 to-blue-600 rounded-md hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {isLoadingSummary ? <Spinner /> : 'Generate Analysis'}
+                    </button>
+                </div>
+                {error && <Message text={error} type={MessageType.Error} />}
+                {summary && (
+                    <div className="bg-gray-900/50 p-2.5 rounded-md border-l-4 border-cyan-500">
+                        <p className="text-sm text-gray-300 italic">{summary}</p>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     const AdminDashboard = () => {
         const [stats, setStats] = useState([]);
         const [isLoading, setIsLoading] = useState(true);
@@ -370,6 +431,8 @@
             <div className="space-y-3">
                 <h2 className="text-lg font-semibold text-gray-200">Source Duplication Stats</h2>
                 <p className="text-xs text-gray-400 -mt-2">{subtitle}</p>
+
+                <GeminiHealthCard stats={stats} isLoadingStats={isLoading} />
                 
                 <div className="bg-gray-800 border border-gray-700 p-2 rounded-lg space-y-2">
                     <div className="grid grid-cols-2 gap-2">
