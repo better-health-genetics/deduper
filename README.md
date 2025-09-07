@@ -21,8 +21,8 @@ The system is composed of a powerful, modular Google Apps Script backend and a m
 - **Comprehensive Logging**: Maintains detailed logs for all operations, errors, and identified duplicates.
 - **Admin Controls**: Provides menu items for administrative tasks like full data rebuilds, historical imports, and trigger setup.
 
-### Context-Aware Sidebar
-The sidebar's UI and functionality intelligently adapt to the user's current location within Google Sheets.
+### Context-Aware Sidebar & Menu
+The sidebar's UI and the main menu in Google Sheets intelligently adapt to the user's current location.
 
 -   **Admin Dashboard View (in Master Sheet)**:
     -   When opened in the Master Sheet, it displays a comprehensive dashboard of duplication statistics for all source sheets.
@@ -40,9 +40,13 @@ The sidebar's UI and functionality intelligently adapt to the user's current loc
     -   Displays **overall** duplicate health statistics from the entire Master sheet.
     -   Submitting a record logs the entry to a local `Checker` sheet and a central `Checker` sheet in the Master file, then writes the data directly to the Master sheet.
 
+-   **Context-Aware Menu**:
+    -   **In the Master Sheet**: You will see the full **"Data Consolidator"** menu with all administrative functions.
+    -   **In any other Sheet**: A simplified **"DeDuper"** menu appears with a single item to "Show Sidebar", ensuring a clean, focused interface for non-admin users.
+
 ### Standalone Web Dashboard
-- A full-page, graphical dashboard accessible via a shareable URL.
-- Presents duplication statistics as an interactive bar chart, offering a clean, high-level view for stakeholders.
+- A full-page, data-rich dashboard accessible via a shareable URL.
+- Presents duplication statistics with high-level summary cards, a bar chart for visual comparison, and a detailed, sortable table for granular analysis.
 - Access is restricted to users who have at least view permissions on the Master Sheet.
 
 ---

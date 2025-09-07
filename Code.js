@@ -15,12 +15,14 @@
 
 /**
  * Auto-add menu and open sidebar when the Master spreadsheet opens.
- * This function merges the logic from both the consolidator and the sidebar.
+ * This function is now context-aware, showing different menus based on the sheet.
  */
 function onOpen() {
-  // Add the main "Data Consolidator" menu for backend tasks.
-  try {
-    var ui = SpreadsheetApp.getUi();
+  const ui = SpreadsheetApp.getUi();
+  const ssId = SpreadsheetApp.getActiveSpreadsheet().getId();
+
+  if (ssId === MASTER_SPREADSHEET_ID) {
+    // Show the full admin menu in the Master Sheet
     ui.createMenu('Data Consolidator')
       .addItem('🔄 Rebuild Master (Full Reset)', 'ui_rebuildMasterFullReset_')
       .addItem('📥 Reimport History (Keep Master)', 'ui_reimportHistoryNoClear_')
@@ -38,13 +40,17 @@ function onOpen() {
       .addSeparator()
       .addItem('📜 Open Log Sheet', 'ui_openLogSheet_')
       .addToUi();
-  } catch (e) {
-    Logger.log('addConsolidatorMenu error: ' + e.message);
+  } else {
+    // Show a simplified menu in all other sheets (Source sheets, generic sheets, etc.)
+    ui.createMenu('DeDuper')
+      .addItem('Show Sidebar', 'showDuplicateCheckerSidebar')
+      .addToUi();
   }
-
-  // Automatically open the sidebar for daily use.
+  
+  // Automatically open the sidebar for daily use in any context.
   showDuplicateCheckerSidebar();
 }
+
 
 /**
  * Serves the web app dashboard. Checks user permission by verifying they can open the Master sheet.
