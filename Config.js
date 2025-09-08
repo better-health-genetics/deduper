@@ -31,7 +31,7 @@ var MASTER_SPREADSHEET_ID = '14I2UGjK3Vmsbya9PJZY16SxIDKotply3ysLHkWI-Hpw'; // D
 
 // --- !! IMPORTANT !! ---
 // After deploying the script as a Web App, paste the correct URL here.
-var WEB_APP_URL = 'PASTE_YOUR_WEB_APP_URL_HERE'; 
+var WEB_APP_URL = 'https://script.google.com/a/macros/bhg.llc/s/AKfycby-X9fXPxjzelSuWxORy8dDAcXOEQ9yf_Aqy3lsSw/exec'; 
 
 // Sheet Names
 var DEST_SHEET_NAME = 'Master';

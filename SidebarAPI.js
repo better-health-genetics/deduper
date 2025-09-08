@@ -1,8 +1,3 @@
-
-
-
-
-
 /** ===========================================================================
  * 
  *                        SIDEBAR API FUNCTIONS
@@ -41,7 +36,8 @@ function getContext() {
 
   } catch(e) {
     Logger.log('Error in getContext: ' + e.stack);
-    return { context: 'ERROR', message: e.message };
+    // Throw the error so the calling function can catch it and report it.
+    throw new Error('getContext() failed: ' + e.message);
   }
 }
 
@@ -419,19 +415,23 @@ function getGeminiHealthSummary(stats) {
 }
 
 /**
- * A debug function callable from source sheets to verify library connection and master sheet access.
- * This is crucial for troubleshooting "Could not connect" errors.
- * @return {object} A result object with debug information.
+ * A comprehensive diagnostic function callable from source sheets.
+ * It verifies library connection, master sheet access, and the result of the `getContext` function.
+ * This is crucial for troubleshooting "Could not connect" errors that occur from the client-side UI.
+ * @return {object} A result object with detailed debug information.
  */
-function debugConnection() {
+function runDiagnostics() {
   try {
     const user = Session.getActiveUser().getEmail();
     const activeSs = SpreadsheetApp.getActiveSpreadsheet();
     const activeSheetId = activeSs.getId();
     const activeSheetName = activeSs.getName();
+    
     let masterAccessStatus = 'Unknown';
     let masterAccessMessage = '';
+    let contextResult = 'Not Run';
 
+    // Step 1: Test Master Sheet Access
     try {
       const masterSs = SpreadsheetApp.openById(MASTER_SPREADSHEET_ID);
       const masterName = masterSs.getName();
@@ -442,13 +442,23 @@ function debugConnection() {
       masterAccessMessage = `Could not open the Master Sheet. The user ${user} may not have at least VIEW permissions. Error: ${e.message}`;
     }
     
+    // Step 2: Test getContext() function
+    try {
+      const context = getContext();
+      contextResult = JSON.stringify(context, null, 2);
+    } catch (e) {
+      contextResult = 'getContext() threw an error: ' + e.stack;
+    }
+    
     return {
       status: 'OK',
       user: user,
       masterAccess: masterAccessStatus,
+      masterAccessMessage: masterAccessMessage,
       activeSheetId: activeSheetId,
       activeSheetName: activeSheetName,
-      message: 'Library function executed successfully. ' + masterAccessMessage
+      getContextResult: contextResult,
+      message: 'Diagnostics completed.'
     };
 
   } catch (e) {
@@ -456,9 +466,11 @@ function debugConnection() {
       status: 'ERROR',
       user: Session.getActiveUser() ? Session.getActiveUser().getEmail() : 'Unknown',
       masterAccess: 'Not Tested',
+      masterAccessMessage: 'Not Tested',
       activeSheetId: SpreadsheetApp.getActiveSpreadsheet() ? SpreadsheetApp.getActiveSpreadsheet().getId() : 'Unknown',
       activeSheetName: SpreadsheetApp.getActiveSpreadsheet() ? SpreadsheetApp.getActiveSpreadsheet().getName() : 'Unknown',
-      message: 'A critical error occurred within the debug function itself: ' + e.message
+      getContextResult: 'Not Run',
+      message: 'A critical error occurred within the diagnostics function itself: ' + e.message
     };
   }
 }

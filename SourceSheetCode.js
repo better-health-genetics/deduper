@@ -1,5 +1,3 @@
-
-
 /**
  * ===============================================================================================
  *                        BHG DeDuper - Source Sheet Loader Script
@@ -30,7 +28,7 @@ function onOpen() {
       .createMenu('DeDuper')
       .addItem('Show Sidebar', 'showAppSidebar')
       .addSeparator()
-      .addItem('Debug Connection', 'debugLibraryConnection')
+      .addItem('Run Diagnostics', 'runDiagnosticsInSourceSheet')
       .addToUi();
 }
 
@@ -39,29 +37,21 @@ function onOpen() {
  */
 function showAppSidebar() {
   // `BHG_DeDuper` is the identifier we set when adding the library.
-  // `showDuplicateCheckerSidebar` is the name of the function in the library's UI.js file.
   BHG_DeDuper.showDuplicateCheckerSidebar();
 }
 
 /**
- * Calls the debug function in the master library to diagnose connection/permission issues.
+ * Calls the new, comprehensive diagnostics function in the master library.
  */
-function debugLibraryConnection() {
-  SpreadsheetApp.getUi().alert('Running debug check... please wait.');
+function runDiagnosticsInSourceSheet() {
   try {
-    // Call the debug function from the library
-    var result = BHG_DeDuper.debugConnection();
+    var result = BHG_DeDuper.runDiagnostics();
     
-    // Format the result object into a readable string for the alert box
-    var message = 
-        'Connection Status: ' + result.status + '\n\n' +
-        'User: ' + result.user + '\n' +
-        'Master Sheet Access: ' + result.masterAccess + '\n' +
-        'Active Sheet ID: ' + result.activeSheetId + '\n' +
-        'Active Sheet Name: ' + result.activeSheetName + '\n\n' +
-        'Message: ' + result.message;
+    var htmlOutput = HtmlService.createHtmlOutput(formatDiagnosticsAsHtml(result))
+        .setWidth(600)
+        .setHeight(450);
         
-    SpreadsheetApp.getUi().alert('Connection Debug Results', message, SpreadsheetApp.getUi().ButtonSet.OK);
+    SpreadsheetApp.getUi().showModalDialog(htmlOutput, 'Connection Diagnostics Results');
     
   } catch (e) {
     var errorMessage = 
@@ -70,3 +60,88 @@ function debugLibraryConnection() {
     SpreadsheetApp.getUi().alert('Library Call Failed', errorMessage, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }
+
+/**
+ * Formats the diagnostic result object into a clean HTML string for a modal dialog.
+ * @param {object} result The result object from runDiagnostics().
+ * @return {string} The HTML string.
+ */
+function formatDiagnosticsAsHtml(result) {
+  function escapeHtml(text) {
+    if (typeof text !== 'string') text = JSON.stringify(text, null, 2);
+    return text
+         .replace(/&/g, "&amp;")
+         .replace(/</g, "&lt;")
+         .replace(/>/g, "&gt;")
+         .replace(/"/g, "&quot;")
+         .replace(/'/g, "&#039;");
+  }
+
+  return `
+    <style>
+      body { font-family: Arial, sans-serif; margin: 20px; color: #333; }
+      h2 { color: #444; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+      table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+      th, td { text-align: left; padding: 8px; border: 1px solid #ddd; }
+      th { background-color: #f2f2f2; width: 150px; }
+      td { word-wrap: break-word; word-break: break-all; }
+      pre { background-color: #eee; padding: 10px; border-radius: 4px; white-space: pre-wrap; font-family: monospace; }
+      .success { color: green; font-weight: bold; }
+      .failed { color: red; font-weight: bold; }
+    </style>
+    <body>
+      <h2>Diagnostic Report</h2>
+      <table>
+        <tr><th>Overall Status</th><td><span class="${result.status === 'OK' ? 'success' : 'failed'}">${escapeHtml(result.status)}</span></td></tr>
+        <tr><th>Executing User</th><td>${escapeHtml(result.user)}</td></tr>
+        <tr><th>Active Sheet Name</th><td>${escapeHtml(result.activeSheetName)}</td></tr>
+        <tr><th>Active Sheet ID</th><td>${escapeHtml(result.activeSheetId)}</td></tr>
+      </table>
+      
+      <h2>Master Sheet Check</h2>
+      <table>
+        <tr><th>Access Status</th><td><span class="${result.masterAccess === 'Success' ? 'success' : 'failed'}">${escapeHtml(result.masterAccess)}</span></td></tr>
+        <tr><th>Details</th><td>${escapeHtml(result.masterAccessMessage)}</td></tr>
+      </table>
+      
+      <h2>getContext() Result</h2>
+      <p>This is the critical test. It shows what the backend function sees when called by the UI.</p>
+      <pre>${escapeHtml(result.getContextResult)}</pre>
+
+      <h2>Overall Message</h2>
+      <pre>${escapeHtml(result.message)}</pre>
+    </body>
+  `;
+}
+
+
+/**************************************************************************************************
+ *                             --- CLIENT-SIDE API BRIDGE ---
+ * 
+ * The functions below are REQUIRED. They act as a bridge between the client-side HTML UI
+ * (which uses `google.script.run`) and the backend library functions. When the sidebar is
+ * opened from a Source Sheet, these global functions are exposed to the UI, which then call
+ * the actual logic in the `BHG_DeDuper` library.
+ **************************************************************************************************/
+
+function getContext() {
+  return BHG_DeDuper.getContext();
+}
+
+function getSourceSheetHealthData(sourceId) {
+  return BHG_DeDuper.getSourceSheetHealthData(sourceId);
+}
+
+function addRecordToSourceSheet(formData) {
+  return BHG_DeDuper.addRecordToSourceSheet(formData);
+}
+
+// These are for the 'OTHER' context but are included for robustness
+function getDuplicateHealthData() {
+  return BHG_DeDuper.getDuplicateHealthData();
+}
+
+function addRecordAndCheckDuplicates(formData) {
+  return BHG_DeDuper.addRecordAndCheckDuplicates(formData);
+}
+
